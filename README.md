@@ -1,4 +1,4 @@
-# Sistema Prenotazioni Parrucchieri v1.0.1
+# Sistema Prenotazioni Parrucchieri v1.0.2
 
 ## Nuove Funzionalità
 
@@ -24,8 +24,8 @@
 - **Logging dettagliato**: Traccia l'assegnazione dei colori per debugging
 
 ### Sistema di Versioning
-- **Versione corrente**: 1.0.1
-- **Cache busting**: Parametro `?v=1.0.1` aggiunto a tutte le risorse
+- **Versione corrente**: 1.0.2
+- **Cache busting**: Parametro `?v=1.0.2` aggiunto a tutte le risorse
 - **Rilevamento aggiornamenti**: Confronto automatico delle versioni
 - **Pulizia cache**: Rimozione automatica delle cache obsolete
 - **Notifiche utente**: Feedback visivo degli aggiornamenti

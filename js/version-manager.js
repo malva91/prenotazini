@@ -1,7 +1,7 @@
 // Version Manager for cache busting and resource loading
 class VersionManager {
     constructor() {
-        this.currentVersion = '1.0.1';
+        this.currentVersion = '1.0.2';
         this.storageKey = 'booking_system_version';
         this.init();
     }

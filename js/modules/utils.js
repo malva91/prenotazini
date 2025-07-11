@@ -1,6 +1,6 @@
 // Utility functions with enhanced error handling and logging
 export class Utils {
-    static APP_VERSION = '1.0.1'; // Version for cache busting
+    static APP_VERSION = '1.0.2'; // Version for cache busting
     
     static log(level, message, data = null) {
         const timestamp = new Date().toISOString();
@@ -195,11 +195,19 @@ export class Utils {
 
     static getUniqueColorForDate(date, existingBookings = []) {
         try {
-            const dateString = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+            const dateString = typeof date === 'string' ? date : 
+                              (date instanceof Date ? date.toISOString().split('T')[0] : String(date));
             
             // Get all colors used on this date
             const usedColors = existingBookings
-                .filter(booking => booking.date === dateString)
+                .filter(booking => {
+                    try {
+                        return booking && booking.date === dateString;
+                    } catch (error) {
+                        this.log('warn', 'Error filtering booking by date', { booking, error: error.message });
+                        return false;
+                    }
+                })
                 .map(booking => booking.color)
                 .filter(color => color); // Remove null/undefined colors
             

@@ -125,7 +125,7 @@ export class UIRenderer {
             <div class="flex items-start justify-between">
                 <div class="flex-1">
                     <div class="flex items-center space-x-4 mb-3">
-                        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${booking.color || '#8b5cf6'}"></div>
+                        <div class="w-4 h-4 rounded-full flex-shrink-0 border border-gray-600" style="background-color: ${booking.color || '#8b5cf6'}"></div>
                         <h3 class="text-lg font-semibold text-gray-100">
                             ${booking.firstName} ${booking.lastName}
                         </h3>

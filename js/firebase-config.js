@@ -1,5 +1,5 @@
 // Configurazione Firebase con gestione errori migliorata
-const SYSTEM_VERSION = '1.0.1';
+const SYSTEM_VERSION = '1.0.2';
 
 const firebaseConfig = {
     apiKey: "AIzaSyA5l7kO0FiNP0DgYxkCyNn6A-aABQeDBAo",
