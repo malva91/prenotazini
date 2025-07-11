@@ -718,6 +718,8 @@ class DatabaseManager {
     // Get health status
     getHealthStatus() {
         try {
+        }
+    }
     window.dbManager = dbManagerInstance;
     safeLog('info', 'Global database manager instance created');
 } catch (error) {
