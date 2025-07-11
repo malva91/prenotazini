@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Prenotazioni Parrucchieri</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            50: '#f9fafb',
+                            100: '#f3f4f6',
+                            200: '#e5e7eb',
+                            300: '#d1d5db',
+                            400: '#9ca3af',
+                            500: '#6b7280',
+                            600: '#4b5563',
+                            650: '#3f4651',
+                            700: '#374151',
+                            800: '#1f2937',
+                            900: '#111827',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #111827;
+            color: #f9fafb;
+        }
+        
+        .booking-card {
+            transition: all 0.3s ease;
+        }
+        
+        .booking-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+        
+        .calendar-day {
+            transition: all 0.2s ease;
+        }
+        
+        .calendar-day:hover {
+            background-color: #374151;
+        }
+        
+        .calendar-day.selected {
+            background-color: #2563eb;
+            color: white;
+        }
+        
+        .calendar-day.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .time-slot {
+            transition: all 0.2s ease;
+        }
+        
+        .time-slot:hover {
+            background-color: #1e40af;
+        }
+        
+        .time-slot.selected {
+            background-color: #2563eb;
+            color: white;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.75);
+            z-index: 1000;
+        }
+        
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+            min-width: 300px;
+            padding: 16px;
+            border-radius: 8px;
+            color: white;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .toast.show {
+            transform: translateX(0);
+        }
+        
+        .toast.success {
+            background-color: #059669;
+        }
+        
+        .toast.error {
+            background-color: #dc2626;
+        }
+        
+        .toast.warning {
+            background-color: #d97706;
+        }
+        
+        .toast.info {
+            background-color: #2563eb;
+        }
+        
+        .booking-confirmed {
+            background-color: #059669 !important;
+        }
+        
+        .booking-pending {
+            background-color: #d97706 !important;
+        }
+        
+        .booking-cancelled {
+            background-color: #dc2626 !important;
+        }
+        
+        .booking-old {
+            background-color: #6b7280 !important;
+            opacity: 0.7;
+        }
+        
+        .random-color-1 { background-color: #8b5cf6 !important; }
+        .random-color-2 { background-color: #06b6d4 !important; }
+        .random-color-3 { background-color: #10b981 !important; }
+        .random-color-4 { background-color: #f59e0b !important; }
+        .random-color-5 { background-color: #ef4444 !important; }
+        .random-color-6 { background-color: #8b5cf6 !important; }
+        .random-color-7 { background-color: #ec4899 !important; }
+        .random-color-8 { background-color: #14b8a6 !important; }
+        .random-color-9 { background-color: #f97316 !important; }
+        .random-color-10 { background-color: #84cc16 !important; }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .calendar-view-btn {
+            transition: all 0.2s ease;
+        }
+
+        .calendar-view-btn.active {
+            background-color: #2563eb;
+            color: white;
+        }
+
+        .connection-status {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .connection-status.online {
+            background-color: #059669;
+            color: white;
+        }
+
+        .connection-status.offline {
+            background-color: #dc2626;
+            color: white;
+        }
+
+        .connection-status.syncing {
+            background-color: #d97706;
+            color: white;
+        }
+
+        /* Custom scrollbar for better appearance */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #374151;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #6b7280;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+    <!-- Admin Toggle Button -->
+    <button id="adminToggle" class="fixed top-4 right-4 z-40 p-3 bg-gray-800 text-gray-300 rounded-full shadow-lg hover:bg-gray-700 hover:text-white transition-all duration-200 border border-gray-600">
+        ⚙️
+    </button>
+
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status offline">
+        📡 Offline
+    </div>
+
+    <!-- Main Container -->
+    <div id="app" class="min-h-screen">
+        <!-- Client View -->
+        <div id="clientView" class="view">
+            <!-- Header -->
+            <header class="bg-gray-800 shadow-lg border-b border-gray-700">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                    <div class="text-center">
+                        <h1 class="text-3xl font-bold text-gray-100">Prenota il tuo appuntamento</h1>
+                        <p class="mt-2 text-gray-400">Scegli data, orario e completa la prenotazione</p>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Progress Steps -->
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6 mb-8">
+                    <div class="flex items-center justify-between">
+                        <div class="flex flex-col items-center step" data-step="date">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center border-2 bg-gray-700 border-gray-600">
+                                📅
+                            </div>
+                            <span class="mt-2 text-sm font-medium text-gray-500">Scegli Data</span>
+                        </div>
+                        <div class="flex-1 h-0.5 mx-4 bg-gray-600"></div>
+                        <div class="flex flex-col items-center step" data-step="time">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center border-2 bg-gray-700 border-gray-600">
+                                🕐
+                            </div>
+                            <span class="mt-2 text-sm font-medium text-gray-500">Scegli Orario</span>
+                        </div>
+                        <div class="flex-1 h-0.5 mx-4 bg-gray-600"></div>
+                        <div class="flex flex-col items-center step" data-step="form">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center border-2 bg-gray-700 border-gray-600">
+                                👤
+                            </div>
+                            <span class="mt-2 text-sm font-medium text-gray-500">Dati Personali</span>
+                        </div>
+                        <div class="flex-1 h-0.5 mx-4 bg-gray-600"></div>
+                        <div class="flex flex-col items-center step" data-step="success">
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center border-2 bg-gray-700 border-gray-600">
+                                ✅
+                            </div>
+                            <span class="mt-2 text-sm font-medium text-gray-500">Conferma</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step Content -->
+                <div id="stepContent" class="space-y-8">
+                    <!-- Date Selection -->
+                    <div id="dateStep" class="step-content">
+                        <div class="max-w-2xl mx-auto">
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <div class="flex items-center justify-between mb-6">
+                                    <button id="prevMonth" class="p-2 hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-400 hover:text-gray-200">
+                                        ◀
+                                    </button>
+                                    <h2 id="currentMonth" class="text-lg font-semibold text-gray-100"></h2>
+                                    <button id="nextMonth" class="p-2 hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-400 hover:text-gray-200">
+                                        ▶
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1 mb-2">
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Dom</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Lun</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Mar</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Mer</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Gio</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Ven</div>
+                                    <div class="text-center text-sm font-medium text-gray-400 py-2">Sab</div>
+                                </div>
+                                <div id="calendarGrid" class="grid grid-cols-7 gap-1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Time Selection -->
+                    <div id="timeStep" class="step-content hidden">
+                        <div class="max-w-2xl mx-auto space-y-6">
+                            <div class="text-center">
+                                <button id="backToDate" class="text-blue-400 hover:text-blue-300 text-sm transition-colors duration-200">
+                                    ← Cambia data
+                                </button>
+                            </div>
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <h3 class="text-lg font-semibold text-gray-100 mb-4">Orari disponibili</h3>
+                                <div id="timeSlots" class="grid grid-cols-2 md:grid-cols-3 gap-3"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form -->
+                    <div id="formStep" class="step-content hidden">
+                        <div class="max-w-2xl mx-auto space-y-6">
+                            <div class="text-center">
+                                <button id="backToTime" class="text-blue-400 hover:text-blue-300 text-sm transition-colors duration-200">
+                                    ← Cambia orario
+                                </button>
+                            </div>
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <h2 class="text-xl font-semibold text-gray-100 mb-6">Completa la prenotazione</h2>
+                                <form id="bookingForm" class="space-y-6">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-300 mb-2">Nome *</label>
+                                            <input type="text" id="firstName" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" placeholder="Il tuo nome">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-300 mb-2">Cognome *</label>
+                                            <input type="text" id="lastName" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" placeholder="Il tuo cognome">
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-300 mb-2">Email *</label>
+                                            <input type="email" id="email" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" placeholder="la-tua@email.com">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-300 mb-2">Telefono *</label>
+                                            <input type="tel" id="phone" required class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" placeholder="123 456 7890">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-300 mb-2">Note aggiuntive</label>
+                                        <textarea id="notes" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" rows="3" placeholder="Richieste particolari o informazioni aggiuntive"></textarea>
+                                    </div>
+                                    <div class="flex flex-col sm:flex-row gap-3 pt-4">
+                                        <button type="submit" class="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium">
+                                            Conferma prenotazione
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Success -->
+                    <div id="successStep" class="step-content hidden">
+                        <div class="max-w-2xl mx-auto">
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-8 text-center">
+                                <div class="bg-green-900/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-700">
+                                    ✅
+                                </div>
+                                <h2 class="text-2xl font-bold text-gray-100 mb-4">Prenotazione completata!</h2>
+                                <p class="text-gray-400 mb-6">La tua prenotazione è stata registrata con successo.</p>
+                                <div class="bg-blue-900/30 rounded-lg p-4 mb-6 border border-blue-700">
+                                    <h3 class="font-semibold text-blue-300 mb-2">Riepilogo prenotazione</h3>
+                                    <div id="bookingSummary" class="text-sm text-blue-200 space-y-1"></div>
+                                </div>
+                                <button id="newBooking" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                    Nuova prenotazione
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Login -->
+        <div id="adminLogin" class="view hidden">
+            <div class="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+                <div class="bg-gray-800 rounded-xl shadow-2xl p-8 w-full max-w-md border border-gray-700">
+                    <div class="mb-6">
+                        <button id="backToClient" class="flex items-center space-x-2 text-gray-400 hover:text-gray-300 transition-colors duration-200">
+                            <span>←</span>
+                            <span class="text-sm">Torna all'area clienti</span>
+                        </button>
+                    </div>
+                    <div class="text-center mb-8">
+                        <div class="bg-blue-900/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-700">
+                            🔒
+                        </div>
+                        <h1 class="text-2xl font-bold text-gray-100">Area Amministratore</h1>
+                        <p class="text-gray-400 mt-2">Inserisci la password per accedere</p>
+                    </div>
+                    <form id="adminLoginForm" class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                            <input type="password" id="adminPassword" class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400" placeholder="Inserisci la password" required>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium">
+                            Accedi
+                        </button>
+                    </form>
+                    <div class="mt-6 text-center">
+                        <p class="text-xs text-gray-500">Demo password: admin123</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Dashboard -->
+        <div id="adminDashboard" class="view hidden">
+            <!-- Header -->
+            <header class="bg-gray-800 shadow-lg border-b border-gray-700">
+                <div class="px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-100">Pannello Amministratore</h1>
+                            <p class="text-gray-400">Gestisci prenotazioni e configurazioni</p>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <button id="exportData" class="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200">
+                                <span>📥</span>
+                                <span>Esporta</span>
+                            </button>
+                            <button id="syncData" class="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                <span>🔄</span>
+                                <span>Sincronizza</span>
+                            </button>
+                            <button id="adminLogout" class="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200">
+                                <span>🚪</span>
+                                <span>Esci</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="flex">
+                <!-- Sidebar -->
+                <aside class="w-64 bg-gray-800 shadow-lg min-h-screen border-r border-gray-700">
+                    <div class="p-6">
+                        <!-- Stats -->
+                        <div class="grid grid-cols-2 gap-4 mb-8">
+                            <div class="bg-blue-900/50 p-3 rounded-lg border border-blue-700">
+                                <div id="totalBookings" class="text-2xl font-bold text-blue-400">0</div>
+                                <div class="text-sm text-blue-300">Totali</div>
+                            </div>
+                            <div class="bg-yellow-900/50 p-3 rounded-lg border border-yellow-700">
+                                <div id="pendingBookings" class="text-2xl font-bold text-yellow-400">0</div>
+                                <div class="text-sm text-yellow-300">In attesa</div>
+                            </div>
+                            <div class="bg-green-900/50 p-3 rounded-lg border border-green-700">
+                                <div id="confirmedBookings" class="text-2xl font-bold text-green-400">0</div>
+                                <div class="text-sm text-green-300">Confermate</div>
+                            </div>
+                            <div class="bg-red-900/50 p-3 rounded-lg border border-red-700">
+                                <div id="cancelledBookings" class="text-2xl font-bold text-red-400">0</div>
+                                <div class="text-sm text-red-300">Annullate</div>
+                            </div>
+                        </div>
+
+                        <!-- Navigation -->
+                        <nav class="space-y-2">
+                            <button class="admin-tab w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors duration-200 bg-blue-900/50 text-blue-300 border border-blue-700" data-tab="bookings">
+                                <span>👥</span>
+                                <span>Prenotazioni</span>
+                            </button>
+                            <button class="admin-tab w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors duration-200 text-gray-400 hover:bg-gray-700 hover:text-gray-300" data-tab="calendar">
+                                <span>📅</span>
+                                <span>Calendario</span>
+                            </button>
+                            <button class="admin-tab w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors duration-200 text-gray-400 hover:bg-gray-700 hover:text-gray-300" data-tab="settings">
+                                <span>⚙️</span>
+                                <span>Impostazioni</span>
+                            </button>
+                        </nav>
+                    </div>
+                </aside>
+
+                <!-- Main content -->
+                <main class="flex-1 p-6 bg-gray-900">
+                    <!-- Bookings Tab -->
+                    <div id="bookingsTab" class="admin-content">
+                        <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6 mb-6">
+                            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+                                <div>
+                                    <h2 class="text-xl font-semibold text-gray-100">Gestione Prenotazioni</h2>
+                                    <p class="text-gray-400">Visualizza e gestisci tutte le prenotazioni attive</p>
+                                </div>
+                                <div class="flex gap-3">
+                                    <input type="text" id="searchBookings" placeholder="Cerca prenotazioni..." class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100 placeholder-gray-400">
+                                    <select id="filterStatus" class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                                        <option value="all">Tutti gli stati</option>
+                                        <option value="pending">In attesa</option>
+                                        <option value="confirmed">Confermate</option>
+                                        <option value="cancelled">Annullate</option>
+                                        <option value="old">Passate</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="bookingsList" class="space-y-4"></div>
+                    </div>
+
+                    <!-- Calendar Tab -->
+                    <div id="calendarTab" class="admin-content hidden">
+                        <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-xl font-semibold text-gray-100">Vista Calendario</h2>
+                                <div class="flex items-center space-x-4">
+                                    <!-- View Mode Selector -->
+                                    <div class="flex bg-gray-700 rounded-lg p-1">
+                                        <button id="monthView" class="calendar-view-btn px-3 py-1 text-sm rounded-md transition-colors duration-200 active">
+                                            Mese
+                                        </button>
+                                        <button id="weekView" class="calendar-view-btn px-3 py-1 text-sm rounded-md transition-colors duration-200 text-gray-300 hover:bg-gray-600">
+                                            Settimana
+                                        </button>
+                                        <button id="dayView" class="calendar-view-btn px-3 py-1 text-sm rounded-md transition-colors duration-200 text-gray-300 hover:bg-gray-600">
+                                            Giorno
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Navigation -->
+                                    <button id="calendarPrev" class="p-2 hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-400 hover:text-gray-200">◀</button>
+                                    <h3 id="calendarMonth" class="text-lg font-medium text-gray-100 min-w-64 text-center"></h3>
+                                    <button id="calendarNext" class="p-2 hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-400 hover:text-gray-200">▶</button>
+                                    <button id="calendarToday" class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-sm">Oggi</button>
+                                </div>
+                            </div>
+                            <div id="calendarContainer">
+                                <div id="monthViewContainer">
+                                    <div id="adminCalendarGrid" class="grid grid-cols-7 gap-1"></div>
+                                </div>
+                                <div id="weekViewContainer" class="hidden">
+                                    <div id="weekCalendarGrid" class="custom-scrollbar"></div>
+                                </div>
+                                <div id="dayViewContainer" class="hidden">
+                                    <div id="dayCalendarGrid" class="custom-scrollbar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Tab -->
+                    <div id="settingsTab" class="admin-content hidden">
+                        <div class="space-y-6">
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <h2 class="text-xl font-semibold text-gray-100 mb-4">Orari di Apertura</h2>
+                                <div id="businessHours" class="space-y-4"></div>
+                                <button id="saveHours" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                    Salva Orari
+                                </button>
+                            </div>
+                            
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <h2 class="text-xl font-semibold text-gray-100 mb-4">Intervalli Orari</h2>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-300 mb-2">
+                                            Intervallo tra gli appuntamenti (minuti)
+                                        </label>
+                                        <select id="timeSlotInterval" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                                            <option value="15">15 minuti</option>
+                                            <option value="30">30 minuti</option>
+                                            <option value="60">60 minuti</option>
+                                        </select>
+                                    </div>
+                                    <button id="saveTimeSlotSettings" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                        Salva Impostazioni
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                                <h2 class="text-xl font-semibold text-gray-100 mb-4">Gestione Festività</h2>
+                                <div class="flex gap-3 mb-4">
+                                    <input type="date" id="newHoliday" class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                                    <button id="addHoliday" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                        Aggiungi
+                                    </button>
+                                </div>
+                                <div id="holidaysList" class="space-y-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="editBookingModal" class="modal">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-2xl border border-gray-700">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-100">Modifica Prenotazione</h3>
+                <button class="modal-close text-gray-400 hover:text-gray-300">✕</button>
+            </div>
+            <form id="editBookingForm" class="space-y-4">
+                <input type="hidden" id="editBookingId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Nome</label>
+                        <input type="text" id="editFirstName" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Cognome</label>
+                        <input type="text" id="editLastName" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                        <input type="email" id="editEmail" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Telefono</label>
+                        <input type="tel" id="editPhone" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Data</label>
+                        <input type="date" id="editDate" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Orario</label>
+                        <input type="time" id="editTime" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Durata</label>
+                        <select id="editDuration" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                            <option value="30">30 min</option>
+                            <option value="60">1 ora</option>
+                            <option value="90">1h 30min</option>
+                            <option value="120">2 ore</option>
+                            <option value="150">2h 30min</option>
+                            <option value="180">3 ore</option>
+                            <option value="210">3h 30min</option>
+                            <option value="240">4 ore</option>
+                            <option value="270">4h 30min</option>
+                            <option value="300">5 ore</option>
+                            <option value="330">5h 30min</option>
+                            <option value="360">6 ore</option>
+                            <option value="390">6h 30min</option>
+                            <option value="420">7 ore</option>
+                            <option value="450">7h 30min</option>
+                            <option value="480">8 ore</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Stato</label>
+                    <select id="editStatus" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100">
+                        <option value="pending">In attesa</option>
+                        <option value="confirmed">Confermata</option>
+                        <option value="cancelled">Annullata</option>
+                        <option value="old">Passata</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Note</label>
+                    <textarea id="editNotes" rows="3" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-100"></textarea>
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" class="modal-close px-4 py-2 bg-gray-600 text-gray-200 rounded-lg hover:bg-gray-500 transition-colors duration-200">
+                        Annulla
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                        Salva Modifiche
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <script src="js/firebase-config.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
