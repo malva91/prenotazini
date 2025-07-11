@@ -12,7 +12,7 @@ class VersionManager {
         try {
             // Controlla se il cache-busting loader è attivo
             if (window.cacheBustingSystem) {
-                safeLog('info', 'Cache-busting system rilevato, integrazione attiva');
+                this.safeLog('info', 'Cache-busting system rilevato, integrazione attiva');
                 this.cacheBustingEnabled = true;
                 this.currentVersion = window.cacheBustingSystem.getVersion() || this.currentVersion;
             }
@@ -21,9 +21,32 @@ class VersionManager {
             this.setupVersionDisplay();
             this.setupVersionAPI();
             this.isInitialized = true;
-            safeLog('info', 'VersionManager initialized successfully');
+            this.safeLog('info', 'VersionManager initialized successfully');
         } catch (error) {
-            safeLog('error', 'Failed to initialize VersionManager', error);
+            this.safeLog('error', 'Failed to initialize VersionManager', error);
+        }
+    }
+
+    safeLog(level, message, data = null) {
+        try {
+            const timestamp = new Date().toISOString();
+            const logMessage = `[${timestamp}] [VERSION-${level.toUpperCase()}] ${message}`;
+            
+            switch (level) {
+                case 'error':
+                    console.error(logMessage, data);
+                    break;
+                case 'warn':
+                    console.warn(logMessage, data);
+                    break;
+                case 'info':
+                    console.info(logMessage, data);
+                    break;
+                default:
+                    console.log(logMessage, data);
+            }
+        } catch (e) {
+            console.error('Error in version manager logging:', e);
         }
     }
 
@@ -32,14 +55,14 @@ class VersionManager {
             const storedVersion = localStorage.getItem(this.storageKey);
             
             if (storedVersion && storedVersion !== this.currentVersion) {
-                safeLog('info', `Version update detected: ${storedVersion} -> ${this.currentVersion}`);
+                this.safeLog('info', `Version update detected: ${storedVersion} -> ${this.currentVersion}`);
                 this.clearCache();
                 this.showUpdateNotification();
             }
             
             localStorage.setItem(this.storageKey, this.currentVersion);
         } catch (error) {
-            safeLog('error', 'Error checking version update', error);
+            this.safeLog('error', 'Error checking version update', error);
         }
     }
 
@@ -65,9 +88,9 @@ class VersionManager {
             
             keysToRemove.forEach(key => localStorage.removeItem(key));
             
-            safeLog('info', 'Cache cleared for version update');
+            this.safeLog('info', 'Cache cleared for version update');
         } catch (error) {
-            safeLog('error', 'Error clearing cache', error);
+            this.safeLog('error', 'Error clearing cache', error);
         }
     }
 
@@ -90,7 +113,7 @@ class VersionManager {
                 notification.remove();
             }, 3000);
         } catch (error) {
-            safeLog('error', 'Error showing update notification', error);
+            this.safeLog('error', 'Error showing update notification', error);
         }
     }
 
@@ -118,7 +141,7 @@ class VersionManager {
             });
             
         } catch (error) {
-            safeLog('error', 'Error setting up version display', error);
+            this.safeLog('error', 'Error setting up version display', error);
         }
     }
 
@@ -135,9 +158,9 @@ class VersionManager {
                 isCacheBustingEnabled: () => this.cacheBustingEnabled
             };
             
-            safeLog('info', 'Version API configurata');
+            this.safeLog('info', 'Version API configurata');
         } catch (error) {
-            safeLog('error', 'Error setting up version API', error);
+            this.safeLog('error', 'Error setting up version API', error);
         }
     }
 
@@ -157,7 +180,7 @@ class VersionManager {
 
             alert(`📱 Sistema Prenotazioni\n\n${message}\n\n💡 Suggerimento: Usa F5 per ricaricare manualmente`);
         } catch (error) {
-            safeLog('error', 'Error showing version info', error);
+            this.safeLog('error', 'Error showing version info', error);
         }
     }
 
@@ -168,7 +191,7 @@ class VersionManager {
     // Force reload with cache busting
     forceReload() {
         try {
-            safeLog('info', 'Force reload richiesto');
+            this.safeLog('info', 'Force reload richiesto');
             
             // Se cache-busting system è disponibile, usalo
             if (window.cacheBustingSystem && typeof window.cacheBustingSystem.forceReload === 'function') {
@@ -184,7 +207,7 @@ class VersionManager {
             }, 100);
             
         } catch (error) {
-            safeLog('error', 'Error forcing reload', error);
+            this.safeLog('error', 'Error forcing reload', error);
             // Fallback to simple reload
             window.location.reload(true);
         }
@@ -193,7 +216,7 @@ class VersionManager {
     // Check if current version is latest
     async checkForUpdates() {
         try {
-            safeLog('info', 'Controllo aggiornamenti...');
+            this.safeLog('info', 'Controllo aggiornamenti...');
             
             // Se cache-busting system è disponibile, usalo
             if (window.cacheBustingSystem && typeof window.cacheBustingSystem.checkUpdate === 'function') {
@@ -214,7 +237,7 @@ class VersionManager {
                 method: 'local-check'
             };
         } catch (error) {
-            safeLog('error', 'Error checking for updates', error);
+            this.safeLog('error', 'Error checking for updates', error);
             return {
                 currentVersion: this.currentVersion,
                 isLatest: true,
@@ -231,7 +254,7 @@ class VersionManager {
             if (window.cacheBustingSystem) {
                 this.cacheBustingEnabled = true;
                 this.currentVersion = window.cacheBustingSystem.getVersion() || this.currentVersion;
-                safeLog('info', 'Integrazione cache-busting completata', {
+                this.safeLog('info', 'Integrazione cache-busting completata', {
                     version: this.currentVersion,
                     systemLoaded: window.cacheBustingSystem.isLoaded()
                 });
@@ -239,44 +262,20 @@ class VersionManager {
             }
             return false;
         } catch (error) {
-            safeLog('error', 'Error integrating cache-busting', error);
+            this.safeLog('error', 'Error integrating cache-busting', error);
             return false;
         }
     }
 }
 
-// Safe logging function for version manager
-function safeLog(level, message, data = null) {
-    try {
-        const timestamp = new Date().toISOString();
-        const logMessage = `[${timestamp}] [VERSION-${level.toUpperCase()}] ${message}`;
-        
-        switch (level) {
-            case 'error':
-                console.error(logMessage, data);
-                break;
-            case 'warn':
-                console.warn(logMessage, data);
-                break;
-            case 'info':
-                console.info(logMessage, data);
-                break;
-            default:
-                console.log(logMessage, data);
-        }
-    } catch (e) {
-        console.error('Error in version manager logging:', e);
-    }
-}
-
 // Initialize version manager
-let versionManager = null;
+let versionManagerInstance = null;
 try {
-    versionManager = new VersionManager();
+    versionManagerInstance = new VersionManager();
     
     // Integra con cache-busting system se disponibile
     if (window.cacheBustingSystem) {
-        versionManager.integrateCacheBusting();
+        versionManagerInstance.integrateCacheBusting();
     }
     
 } catch (error) {

@@ -1,6 +1,4 @@
 // Configurazione Firebase con gestione errori migliorata e ottimizzazioni
-const SYSTEM_VERSION = '1.0.3';
-
 const firebaseConfig = {
     apiKey: "AIzaSyA5l7kO0FiNP0DgYxkCyNn6A-aABQeDBAo",
     authDomain: "prenotazioni-52007.firebaseapp.com",
@@ -34,7 +32,7 @@ function safeLog(level, message, data = null) {
         // Ottieni versione dal sistema di cache-busting se disponibile
         const currentVersion = window.cacheBustingSystem?.getVersion() || 
                               window.versionManager?.getCurrentVersion() || 
-                              SYSTEM_VERSION;
+                              '1.0.3';
         
         const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${currentVersion}] ${message}`;
         
@@ -144,9 +142,9 @@ class DatabaseManager {
         try {
             return window.cacheBustingSystem?.getVersion() || 
                    window.versionManager?.getCurrentVersion() || 
-                   SYSTEM_VERSION;
+                   '1.0.3';
         } catch (error) {
-            return SYSTEM_VERSION;
+            return '1.0.3';
         }
     }
     
