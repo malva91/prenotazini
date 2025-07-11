@@ -199,9 +199,22 @@ export class Utils {
             if (!date) return null;
             
             if (typeof date === 'string') {
-                // Check if it's a valid date string
-                const parsed = new Date(date);
-                return isNaN(parsed.getTime()) ? null : date;
+                // Validate date format and actual date validity
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                    return null;
+                }
+                const parsed = new Date(date + 'T00:00:00');
+                if (isNaN(parsed.getTime())) {
+                    return null;
+                }
+                // Check if the date components match (prevents invalid dates like 2024-02-30)
+                const [year, month, day] = date.split('-').map(Number);
+                if (parsed.getFullYear() !== year || 
+                    parsed.getMonth() !== month - 1 || 
+                    parsed.getDate() !== day) {
+                    return null;
+                }
+                return date;
             }
             
             if (date instanceof Date) {

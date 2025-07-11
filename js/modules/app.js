@@ -32,6 +32,9 @@ class BookingSystem {
         try {
             Utils.log('info', `BookingSystem initialization attempt ${this.initializationAttempts}`);
             
+            // Set initialization state
+            this.initializationState = 'initializing';
+            
             // Check if required dependencies are available
             if (!window.dbManager) {
                 throw new Error('Database manager not available');
@@ -50,6 +53,7 @@ class BookingSystem {
             this.renderCurrentView();
             
             this.isInitialized = true;
+            this.initializationState = 'completed';
             Utils.log('info', 'BookingSystem initialized successfully');
             
             // Show success message
@@ -58,10 +62,12 @@ class BookingSystem {
             }
             
         } catch (error) {
+            this.initializationState = 'failed';
             Utils.log('error', `BookingSystem initialization failed (attempt ${this.initializationAttempts})`, error);
             
             if (this.initializationAttempts < this.maxInitializationAttempts) {
                 Utils.log('info', `Retrying initialization in 2 seconds...`);
+                this.initializationState = 'retrying';
                 setTimeout(() => this.init(), 2000);
             } else {
                 Utils.log('error', 'Max initialization attempts reached, showing error state');

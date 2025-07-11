@@ -35,30 +35,6 @@ function safeLog(level, message, data = null) {
     }
 }
 
-// Utility function for safe logging
-function safeLog(level, message, data = null) {
-    try {
-        const timestamp = new Date().toISOString();
-        const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${SYSTEM_VERSION}] ${message}`;
-        
-        switch (level) {
-            case 'error':
-                console.error(logMessage, data);
-                break;
-            case 'warn':
-                console.warn(logMessage, data);
-                break;
-            case 'info':
-                console.info(logMessage, data);
-                break;
-            default:
-                console.log(logMessage, data);
-        }
-    } catch (e) {
-        console.error('Error in logging function:', e);
-    }
-}
-
 // Initialize Firebase with error handling
 let db = null;
 let isFirebaseInitialized = false;
@@ -100,14 +76,24 @@ class DatabaseManager {
         this.isOnline = navigator.onLine;
         this.isFirebaseReady = isFirebaseInitialized;
         this.retryAttempts = 3;
-        this.retryDelay = 1000;
-        this.operationTimeout = 10000; // 10 seconds timeout
+        this.retryDelay = 1000; // Base delay, will be exponential
+        this.operationTimeout = this.getConfigurableTimeout(); // Configurable timeout
+        this.activeSaves = new Map(); // Track active save operations
         
         this.setupConnectionMonitoring();
         safeLog('info', 'DatabaseManager initialized', { 
             isOnline: this.isOnline, 
             isFirebaseReady: this.isFirebaseReady 
         });
+    }
+    
+    getConfigurableTimeout() {
+        try {
+            // Check for environment variable or default to 10 seconds
+            return parseInt(process?.env?.FIREBASE_TIMEOUT) || 10000;
+        } catch {
+            return 10000;
+        }
     }
 
     setupConnectionMonitoring() {

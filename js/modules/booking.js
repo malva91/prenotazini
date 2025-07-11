@@ -99,6 +99,18 @@ export class BookingManager {
     }
 
     async saveBooking(bookingData) {
+        // Prevent concurrent saves for the same booking
+        const saveKey = bookingData.id || 'new_booking';
+        if (this._savingBookings && this._savingBookings.has(saveKey)) {
+            Utils.log('warn', 'Booking save already in progress', { id: saveKey });
+            return { success: false, error: 'Save already in progress' };
+        }
+        
+        if (!this._savingBookings) {
+            this._savingBookings = new Set();
+        }
+        this._savingBookings.add(saveKey);
+        
         try {
             Utils.log('info', 'Saving booking', { 
                 id: bookingData.id || 'new',
@@ -168,6 +180,8 @@ export class BookingManager {
                 error: error.message 
             });
             return { success: false, error: error.message };
+        } finally {
+            this._savingBookings.delete(saveKey);
         }
     }
 
@@ -600,7 +614,8 @@ export class BookingManager {
 
             Utils.log('info', 'Setting up real-time listener');
             
-            return this.dbManager.onBookingsChange((bookings) => {
+            // Store the unsubscribe function
+            this._realtimeUnsubscribe = this.dbManager.onBookingsChange((bookings) => {
                 try {
                     Utils.log('info', `Real-time update received: ${bookings?.length || 0} bookings`);
                     
@@ -616,9 +631,27 @@ export class BookingManager {
                     Utils.log('error', 'Error processing real-time update', error);
                 }
             });
+            
+            return this._realtimeUnsubscribe;
         } catch (error) {
             Utils.log('error', 'Error setting up real-time listener', error);
             return null;
+        }
+    }
+    
+    // Cleanup method
+    cleanup() {
+        try {
+            if (this._realtimeUnsubscribe && typeof this._realtimeUnsubscribe === 'function') {
+                this._realtimeUnsubscribe();
+                this._realtimeUnsubscribe = null;
+                Utils.log('info', 'Real-time listener unsubscribed');
+            }
+            
+            this.listeners = [];
+            this._savingBookings?.clear();
+        } catch (error) {
+            Utils.log('error', 'Error during cleanup', error);
         }
     }
 
