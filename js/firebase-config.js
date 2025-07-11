@@ -717,26 +717,46 @@ class DatabaseManager {
 
     // Get health status
     getHealthStatus() {
-        try {
-        }
-    }
+       try {
+    // Provo a usare l'istanza reale
     window.dbManager = dbManagerInstance;
     safeLog('info', 'Global database manager instance created');
 } catch (error) {
     safeLog('error', 'Failed to create database manager instance', error);
-    
-    // Create a fallback mock database manager
+
+    // Se fallisce, uso un fallback mock
     window.dbManager = {
-        saveBooking: async () => ({ success: false, error: 'Database not available' }),
-        loadBookings: async () => [],
-        deleteBooking: async () => ({ success: false, error: 'Database not available' }),
-        saveSettings: async () => { throw new Error('Database not available'); },
-        loadSettings: async () => null,
-        onBookingsChange: () => null,
-        forceSync: async () => false,
-        testConnection: async () => false,
-        getHealthStatus: () => ({ error: 'Database manager not available' })
+        async saveBooking() {
+            return { success: false, error: 'Database not available' };
+        },
+        async loadBookings() {
+            return [];
+        },
+        async deleteBooking() {
+            return { success: false, error: 'Database not available' };
+        },
+        async saveSettings() {
+            throw new Error('Database not available');
+        },
+        async loadSettings() {
+            return null;
+        },
+        onBookingsChange() {
+            // no-op
+        },
+        async forceSync() {
+            return false;
+        },
+        async testConnection() {
+            return false;
+        },
+        getHealthStatus() {
+            return { error: 'Database manager not available' };
+        }
     };
-    
+
     safeLog('warn', 'Created fallback database manager');
 }
+    }
+}
+
