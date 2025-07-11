@@ -237,6 +237,22 @@ export class Utils {
         }
     }
 
+    // NUOVO: Funzione per ottenere data locale senza problemi di timezone
+    static getLocalDateString(date) {
+        try {
+            const dateObj = new Date(date);
+            if (isNaN(dateObj.getTime())) {
+                this.log('warn', 'getLocalDateString called with invalid date', date);
+                return null;
+            }
+            
+            return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        } catch (error) {
+            this.log('error', 'Error in getLocalDateString', { date, error: error.message });
+            return null;
+        }
+    }
+
     // OTTIMIZZAZIONE: Parse time ottimizzato
     static parseTimeToMinutes(timeString) {
         try {

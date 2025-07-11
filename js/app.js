@@ -34,8 +34,14 @@ class BookingSystem {
             await this.settingsManager.loadSettings();
             await this.bookingManager.loadBookings();
             
+            // NUOVO: Avvia pulizia automatica delle prenotazioni vecchie
+            await this.bookingManager.updateOldBookings();
+            
             // Setup real-time listener
             this.bookingManager.setupRealTimeListener();
+            
+            // NUOVO: Programma pulizia automatica ogni ora
+            this.setupAutomaticCleanup();
             
             // Setup event listeners
             this.setupEventListeners();
@@ -47,6 +53,25 @@ class BookingSystem {
         } catch (error) {
             console.error('Error initializing BookingSystem:', error);
             this.toastManager.error('Errore durante l\'inizializzazione del sistema');
+        }
+    }
+
+    // NUOVO: Setup pulizia automatica
+    setupAutomaticCleanup() {
+        try {
+            // Esegui pulizia ogni ora
+            setInterval(async () => {
+                try {
+                    await this.bookingManager.updateOldBookings();
+                    console.log('Automatic cleanup completed');
+                } catch (error) {
+                    console.error('Error in automatic cleanup:', error);
+                }
+            }, 60 * 60 * 1000); // 1 ora
+            
+            console.log('Automatic cleanup scheduled every hour');
+        } catch (error) {
+            console.error('Error setting up automatic cleanup:', error);
         }
     }
 

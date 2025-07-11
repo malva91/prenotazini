@@ -438,7 +438,9 @@ export class BookingManager {
                 return [];
             }
 
-            const dateString = new Date(date).toISOString().split('T')[0];
+            // CORREZIONE: Usa data locale per evitare problemi di timezone
+            const dateObj = new Date(date);
+            const dateString = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
             
             // OTTIMIZZAZIONE: Check cache first
             const cacheKey = `date_${dateString}`;
@@ -489,8 +491,11 @@ export class BookingManager {
                 return [];
             }
 
-            const start = new Date(startDate).toISOString().split('T')[0];
-            const end = new Date(endDate).toISOString().split('T')[0];
+            // CORREZIONE: Usa date locali per evitare problemi di timezone
+            const startObj = new Date(startDate);
+            const endObj = new Date(endDate);
+            const start = `${startObj.getFullYear()}-${String(startObj.getMonth() + 1).padStart(2, '0')}-${String(startObj.getDate()).padStart(2, '0')}`;
+            const end = `${endObj.getFullYear()}-${String(endObj.getMonth() + 1).padStart(2, '0')}-${String(endObj.getDate()).padStart(2, '0')}`;
             
             const rangeBookings = this.bookings.filter(booking => {
                 try {
@@ -636,19 +641,31 @@ export class BookingManager {
     async updateOldBookings() {
         try {
             const today = new Date();
-            const todayString = today.toISOString().split('T')[0];
+            // CORREZIONE: Usa data locale per evitare problemi di timezone
+            const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
             const currentTime = Utils.parseTimeToMinutes(
                 today.toTimeString().slice(0, 5)
             );
 
             let updatedCount = 0;
             const bookingsToUpdate = [];
+            const bookingsToDelete = [];
+            
+            // NUOVO: Calcola data di una settimana fa per cancellazione automatica
+            const oneWeekAgo = new Date(today);
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            const oneWeekAgoString = `${oneWeekAgo.getFullYear()}-${String(oneWeekAgo.getMonth() + 1).padStart(2, '0')}-${String(oneWeekAgo.getDate()).padStart(2, '0')}`;
 
             // OTTIMIZZAZIONE: Identifica bookings da aggiornare prima
             this.bookings.forEach((booking) => {
                 try {
-                    if (booking.status === 'confirmed') {
-                        const bookingDate = booking.date;
+                    const bookingDate = booking.date;
+                    
+                    // NUOVO: Cancella prenotazioni più vecchie di una settimana
+                    if (bookingDate < oneWeekAgoString) {
+                        bookingsToDelete.push(booking);
+                    } else if (booking.status === 'confirmed') {
+                        // Aggiorna a 'old' le prenotazioni passate ma recenti
                         const bookingTime = Utils.parseTimeToMinutes(booking.time);
                         const bookingDuration = booking.duration || 30;
                         const bookingEndTime = bookingTime + bookingDuration;
@@ -663,8 +680,28 @@ export class BookingManager {
                 }
             });
 
+            // NUOVO: Cancella prenotazioni vecchie di più di una settimana
+            if (bookingsToDelete.length > 0) {
+                Utils.log('info', `Deleting ${bookingsToDelete.length} bookings older than one week`);
+                
+                for (const booking of bookingsToDelete) {
+                    try {
+                        const result = await this.deleteBooking(booking.id);
+                        if (result.success) {
+                            Utils.log('debug', 'Old booking deleted', { id: booking.id, date: booking.date });
+                        } else {
+                            Utils.log('error', 'Failed to delete old booking', { id: booking.id, error: result.error });
+                        }
+                    } catch (error) {
+                        Utils.log('error', 'Error deleting old booking', { booking: booking.id, error: error.message });
+                    }
+                }
+            }
+
             // OTTIMIZZAZIONE: Batch update
             if (bookingsToUpdate.length > 0) {
+                Utils.log('info', `Updating ${bookingsToUpdate.length} bookings to old status`);
+                
                 for (const booking of bookingsToUpdate) {
                     try {
                         booking.status = 'old';
@@ -675,7 +712,7 @@ export class BookingManager {
                     }
                 }
 
-                Utils.log('info', `Updated ${updatedCount} bookings to old status`);
+                Utils.log('info', `Updated ${updatedCount} bookings to old status, deleted ${bookingsToDelete.length} old bookings`);
             }
         } catch (error) {
             Utils.log('error', 'Error in updateOldBookings', error);

@@ -339,7 +339,12 @@ export class SettingsManager {
                 return false;
             }
 
-            const dateString = new Date(date).toISOString().split('T')[0];
+            // CORREZIONE: Usa data locale per evitare problemi di timezone
+            const dateString = Utils.getLocalDateString(date);
+            if (!dateString) {
+                return false;
+            }
+            
             const holidays = this.getHolidays();
             
             return holidays.includes(dateString);

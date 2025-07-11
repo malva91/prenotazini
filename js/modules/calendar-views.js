@@ -48,8 +48,11 @@ export class CalendarViews {
         const isToday = Utils.isSameDate ? Utils.isSameDate(date, new Date()) : 
                        date.toDateString() === new Date().toDateString();
         
+        // CORREZIONE: Usa la data locale senza conversioni di timezone
+        const localDateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        
         const dayBookings = bookings.filter(booking => 
-            booking.date === date.toISOString().split('T')[0] && 
+            booking.date === localDateString && 
             (booking.status === 'confirmed' || booking.status === 'old')
         );
 
