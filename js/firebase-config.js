@@ -14,6 +14,21 @@ const firebaseConfig = {
 // Utility function for safe logging - VERSIONE UNICA OTTIMIZZATA
 function safeLog(level, message, data = null) {
     try {
+        // OTTIMIZZAZIONE: Limita logging Firebase per ridurre spam
+        if (level === 'debug' && Math.random() > 0.2) {
+            return; // Mostra solo 20% dei debug logs Firebase
+        }
+        
+        // OTTIMIZZAZIONE: Skip logging ripetitivo
+        const logKey = `firebase_${level}_${message}`;
+        if (!window._firebaseLogCounts) window._firebaseLogCounts = new Map();
+        
+        const count = window._firebaseLogCounts.get(logKey) || 0;
+        if (count >= 3 && level === 'info') {
+            return; // Skip dopo 3 volte per info logs
+        }
+        window._firebaseLogCounts.set(logKey, count + 1);
+        
         const timestamp = new Date().toISOString();
         
         // Ottieni versione dal sistema di cache-busting se disponibile
@@ -22,14 +37,6 @@ function safeLog(level, message, data = null) {
                               SYSTEM_VERSION;
         
         const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${currentVersion}] ${message}`;
-        
-        // Ottimizzazione: usa console.table per oggetti complessi
-        if (data && typeof data === 'object' && Object.keys(data).length > 3) {
-            console.groupCollapsed(logMessage);
-            console.table(data);
-            console.groupEnd();
-            return;
-        }
         
         switch (level) {
             case 'error':
@@ -210,12 +217,9 @@ class DatabaseManager {
 
             // Monitor Firebase connection if available
             if (this.isFirebaseReady && db) {
-                db.enableNetwork().then(() => {
-                    safeLog('info', 'Firebase network enabled');
-                    this.updateConnectionStatus('online');
-                }).catch((error) => {
+                // OTTIMIZZAZIONE: Rimuovi logging ridondante di network enable
+                db.enableNetwork().catch((error) => {
                     safeLog('error', 'Failed to enable Firebase network', error);
-                    this.updateConnectionStatus('offline');
                 });
             }
         } catch (error) {
@@ -233,11 +237,13 @@ class DatabaseManager {
             try {
                 await operation.execute();
                 this.saveQueue.delete(key);
-                safeLog('debug', 'Queued operation processed', { key });
+                // OTTIMIZZAZIONE: Log solo il totale, non ogni operazione
             } catch (error) {
                 safeLog('error', 'Failed to process queued operation', { key, error: error.message });
             }
         }
+        
+        safeLog('info', 'All queued operations processed');
     }
 
     updateConnectionStatus(status) {

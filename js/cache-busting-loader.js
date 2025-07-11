@@ -19,6 +19,11 @@
 
   // Logging con timestamp
   function log(level, message, data = null) {
+    // OTTIMIZZAZIONE: Limita logging cache-busting
+    if (level === 'debug' && Math.random() > 0.3) {
+      return; // Mostra solo 30% dei debug logs
+    }
+    
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [CACHE-BUSTER-${level.toUpperCase()}] ${message}`;
     
@@ -243,12 +248,14 @@
           if (newHref !== originalHref) {
             link.href = newHref;
             count++;
-            log('debug', `CSS aggiornato: ${cleanHref} → ${newHref}`);
+            // OTTIMIZZAZIONE: Log solo il totale, non ogni file
           }
         }
       });
       
-      log('info', `Cache-busting CSS: ${count} file aggiornati`);
+      if (count > 0) {
+        log('info', `Cache-busting CSS: ${count} file aggiornati`);
+      }
     } catch (error) {
       log('error', 'Errore nel cache-busting CSS', error);
     }
@@ -294,11 +301,13 @@
           original.remove();
           
           count++;
-          log('debug', `JS aggiornato: ${cleanSrc} → ${newSrc}`);
+          // OTTIMIZZAZIONE: Log solo il totale, non ogni file
         }
       });
       
-      log('info', `Cache-busting JS: ${count} file aggiornati`);
+      if (count > 0) {
+        log('info', `Cache-busting JS: ${count} file aggiornati`);
+      }
     } catch (error) {
       log('error', 'Errore nel cache-busting JS', error);
     }
@@ -321,12 +330,14 @@
           if (newSrc !== originalSrc) {
             element.src = newSrc;
             count++;
-            log('debug', `Risorsa aggiornata: ${cleanSrc} → ${newSrc}`);
+            // OTTIMIZZAZIONE: Log solo il totale, non ogni file
           }
         }
       });
       
-      log('info', `Cache-busting risorse: ${count} file aggiornati`);
+      if (count > 0) {
+        log('info', `Cache-busting risorse: ${count} file aggiornati`);
+      }
     } catch (error) {
       log('error', 'Errore nel cache-busting risorse', error);
     }

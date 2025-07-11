@@ -28,7 +28,7 @@ export class BookingManager {
         this.listenerRetryCount = 0;
         this.maxListenerRetries = 3;
         
-        Utils.log('info', 'BookingManager initialized with optimizations');
+        Utils.log('info', 'BookingManager initialized');
     }
 
     // OTTIMIZZAZIONE: Load bookings con batch processing
@@ -612,7 +612,6 @@ export class BookingManager {
             };
 
             if (!Array.isArray(this.bookings)) {
-                Utils.log('warn', 'Bookings is not an array in getBookingStats');
                 return stats;
             }
 
@@ -622,14 +621,22 @@ export class BookingManager {
                     if (stats.hasOwnProperty(booking.status)) {
                         stats[booking.status]++;
                     } else {
-                        Utils.log('warn', 'Unknown booking status', { booking: booking.id, status: booking.status });
+                        // Conta come pending se status sconosciuto
+                        stats.pending++;
                     }
                 } catch (error) {
-                    Utils.log('warn', 'Error processing booking in stats', { booking: booking.id, error: error.message });
+                    // Skip booking con errori silenziosamente
                 }
             });
 
-            Utils.log('debug', 'Booking stats calculated', stats);
+            // OTTIMIZZAZIONE: Log stats solo se cambiano significativamente
+            if (!this._lastStats || 
+                Math.abs(this._lastStats.total - stats.total) > 0 ||
+                Math.abs(this._lastStats.pending - stats.pending) > 0) {
+                Utils.log('debug', 'Booking stats updated', stats);
+                this._lastStats = { ...stats };
+            }
+            
             return stats;
         } catch (error) {
             Utils.log('error', 'Error in getBookingStats', error);
@@ -723,11 +730,9 @@ export class BookingManager {
     filterBookings(searchTerm = '', statusFilter = 'all') {
         try {
             if (!Array.isArray(this.bookings)) {
-                Utils.log('warn', 'Bookings is not an array in filterBookings');
                 return [];
             }
 
-            const performanceId = Utils.startPerformanceMeasure('filterBookings');
             let filtered = this.bookings;
 
             // OTTIMIZZAZIONE: Filter by status first (più efficiente)
@@ -736,7 +741,6 @@ export class BookingManager {
                     try {
                         return booking.status === statusFilter;
                     } catch (error) {
-                        Utils.log('warn', 'Error filtering booking by status', { booking: booking.id, error: error.message });
                         return false;
                     }
                 });
@@ -766,15 +770,17 @@ export class BookingManager {
                                 searchableText.includes(searchTerm)
                             );
                         } catch (error) {
-                            Utils.log('warn', 'Error filtering booking by search term', { booking: booking.id, error: error.message });
                             return false;
                         }
                     });
                 }
             }
 
-            Utils.endPerformanceMeasure(performanceId);
-            Utils.log('debug', `Filtered ${filtered.length} bookings from ${this.bookings.length} total`);
+            // OTTIMIZZAZIONE: Log solo se filtro significativo
+            if (searchTerm || statusFilter !== 'all') {
+                Utils.log('debug', `Filtered ${filtered.length}/${this.bookings.length} bookings`);
+            }
+            
             return filtered;
         } catch (error) {
             Utils.log('error', 'Error in filterBookings', { searchTerm, statusFilter, error: error.message });
@@ -811,12 +817,14 @@ export class BookingManager {
     notifyListeners() {
         try {
             if (!Array.isArray(this.listeners)) {
-                Utils.log('warn', 'Listeners is not an array');
                 this.listeners = [];
                 return;
             }
 
-            Utils.log('debug', `Notifying ${this.listeners.length} listeners`);
+            // OTTIMIZZAZIONE: Log solo se ci sono molti listeners
+            if (this.listeners.length > 5) {
+                Utils.log('debug', `Notifying ${this.listeners.length} listeners`);
+            }
             
             // OTTIMIZZAZIONE: Async notification per non bloccare UI
             setTimeout(() => {
@@ -825,7 +833,8 @@ export class BookingManager {
                         if (typeof callback === 'function') {
                             callback(this.bookings);
                         } else {
-                            Utils.log('warn', `Listener at index ${index} is not a function`);
+                            // Rimuovi listener non validi silenziosamente
+                            this.listeners.splice(index, 1);
                         }
                     } catch (error) {
                         Utils.log('error', `Error in listener at index ${index}`, error);

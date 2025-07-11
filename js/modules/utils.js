@@ -17,8 +17,30 @@ export class Utils {
         '#c084fc', '#22d3ee', '#4ade80', '#fbbf24', '#fb923c'
     ];
     
+    // OTTIMIZZAZIONE: Controllo logging per ridurre spam
+    static _logCounts = new Map();
+    static _maxLogCount = 5;
+    static _logResetInterval = 60000; // 1 minuto
+    
     static log(level, message, data = null) {
         try {
+            // OTTIMIZZAZIONE: Limita logging ripetitivo
+            const logKey = `${level}_${message}`;
+            const count = this._logCounts.get(logKey) || 0;
+            
+            if (count >= this._maxLogCount) {
+                return; // Skip logging se troppo frequente
+            }
+            
+            this._logCounts.set(logKey, count + 1);
+            
+            // Reset contatori periodicamente
+            if (!this._logResetTimer) {
+                this._logResetTimer = setInterval(() => {
+                    this._logCounts.clear();
+                }, this._logResetInterval);
+            }
+            
             const timestamp = new Date().toISOString();
             const logMessage = `[${timestamp}] [UTILS-${level.toUpperCase()}] ${message}`;
             
@@ -38,6 +60,9 @@ export class Utils {
                     console.info(logMessage, data);
                     break;
                 default:
+                    if (level === 'debug' && Math.random() > 0.1) {
+                        return; // Mostra solo 10% dei debug logs
+                    }
                     console.log(logMessage, data);
             }
         } catch (e) {
