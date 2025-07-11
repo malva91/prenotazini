@@ -3,12 +3,19 @@ class VersionManager {
     constructor() {
         this.currentVersion = '1.0.2';
         this.storageKey = 'booking_system_version';
+        this.isInitialized = false;
         this.init();
     }
 
     init() {
-        this.checkVersionUpdate();
-        this.setupVersionDisplay();
+        try {
+            this.checkVersionUpdate();
+            this.setupVersionDisplay();
+            this.isInitialized = true;
+            safeLog('info', 'VersionManager initialized successfully');
+        } catch (error) {
+            safeLog('error', 'Failed to initialize VersionManager', error);
+        }
     }
 
     checkVersionUpdate() {
@@ -16,14 +23,14 @@ class VersionManager {
             const storedVersion = localStorage.getItem(this.storageKey);
             
             if (storedVersion && storedVersion !== this.currentVersion) {
-                console.log(`Version update detected: ${storedVersion} -> ${this.currentVersion}`);
+                safeLog('info', `Version update detected: ${storedVersion} -> ${this.currentVersion}`);
                 this.clearCache();
                 this.showUpdateNotification();
             }
             
             localStorage.setItem(this.storageKey, this.currentVersion);
         } catch (error) {
-            console.error('Error checking version update:', error);
+            safeLog('error', 'Error checking version update', error);
         }
     }
 
@@ -49,9 +56,9 @@ class VersionManager {
             
             keysToRemove.forEach(key => localStorage.removeItem(key));
             
-            console.log('Cache cleared for version update');
+            safeLog('info', 'Cache cleared for version update');
         } catch (error) {
-            console.error('Error clearing cache:', error);
+            safeLog('error', 'Error clearing cache', error);
         }
     }
 
@@ -74,7 +81,7 @@ class VersionManager {
                 notification.remove();
             }, 3000);
         } catch (error) {
-            console.error('Error showing update notification:', error);
+            safeLog('error', 'Error showing update notification', error);
         }
     }
 
@@ -89,66 +96,12 @@ class VersionManager {
             
             document.body.appendChild(versionDisplay);
         } catch (error) {
-            console.error('Error setting up version display:', error);
+            safeLog('error', 'Error setting up version display', error);
         }
     }
 
     getCurrentVersion() {
         return this.currentVersion;
-    }
-
-    getVersionedUrl(url) {
-        try {
-            if (!url || typeof url !== 'string') {
-                return url;
-            }
-            
-            const separator = url.includes('?') ? '&' : '?';
-            return `${url}${separator}v=${this.currentVersion}`;
-        } catch (error) {
-            console.error('Error creating versioned URL:', error);
-            return url;
-        }
-    }
-
-    loadVersionedResource(type, src, options = {}) {
-        return new Promise((resolve, reject) => {
-            try {
-                let element;
-                const versionedSrc = this.getVersionedUrl(src);
-                
-                if (type === 'script') {
-                    element = document.createElement('script');
-                    element.src = versionedSrc;
-                    element.type = options.type || 'text/javascript';
-                    if (options.module) {
-                        element.type = 'module';
-                    }
-                } else if (type === 'stylesheet') {
-                    element = document.createElement('link');
-                    element.rel = 'stylesheet';
-                    element.href = versionedSrc;
-                } else {
-                    reject(new Error(`Unsupported resource type: ${type}`));
-                    return;
-                }
-                
-                element.onload = () => {
-                    console.log(`Loaded versioned ${type}:`, versionedSrc);
-                    resolve(element);
-                };
-                
-                element.onerror = (error) => {
-                    console.error(`Failed to load versioned ${type}:`, versionedSrc, error);
-                    reject(error);
-                };
-                
-                document.head.appendChild(element);
-            } catch (error) {
-                console.error(`Error loading versioned ${type}:`, error);
-                reject(error);
-            }
-        });
     }
 
     // Force reload with cache busting
@@ -164,7 +117,7 @@ class VersionManager {
             
             window.location.href = url.toString();
         } catch (error) {
-            console.error('Error forcing reload:', error);
+            safeLog('error', 'Error forcing reload', error);
             // Fallback to simple reload
             window.location.reload(true);
         }
@@ -181,7 +134,7 @@ class VersionManager {
                 updateAvailable: false
             };
         } catch (error) {
-            console.error('Error checking for updates:', error);
+            safeLog('error', 'Error checking for updates', error);
             return {
                 currentVersion: this.currentVersion,
                 isLatest: true,
@@ -192,11 +145,40 @@ class VersionManager {
     }
 }
 
+// Safe logging function for version manager
+function safeLog(level, message, data = null) {
+    try {
+        const timestamp = new Date().toISOString();
+        const logMessage = `[${timestamp}] [VERSION-${level.toUpperCase()}] ${message}`;
+        
+        switch (level) {
+            case 'error':
+                console.error(logMessage, data);
+                break;
+            case 'warn':
+                console.warn(logMessage, data);
+                break;
+            case 'info':
+                console.info(logMessage, data);
+                break;
+            default:
+                console.log(logMessage, data);
+        }
+    } catch (e) {
+        console.error('Error in version manager logging:', e);
+    }
+}
+
 // Initialize version manager
-const versionManager = new VersionManager();
+let versionManager = null;
+try {
+    versionManager = new VersionManager();
+    window.versionManager = versionManager;
+} catch (error) {
+    console.error('Failed to initialize version manager:', error);
+}
 
 // Make it globally available
-window.versionManager = versionManager;
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {

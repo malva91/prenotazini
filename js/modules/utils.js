@@ -1,6 +1,6 @@
 // Utility functions with enhanced error handling and logging
 export class Utils {
-    static APP_VERSION = '1.0.2'; // Version for cache busting
+    static APP_VERSION = '1.0.2';
     
     static log(level, message, data = null) {
         const timestamp = new Date().toISOString();
@@ -193,16 +193,44 @@ export class Utils {
         }
     }
 
+    // Validate that date parameter is valid before processing
+    static validateDateParameter(date) {
+        try {
+            if (!date) return null;
+            
+            if (typeof date === 'string') {
+                // Check if it's a valid date string
+                const parsed = new Date(date);
+                return isNaN(parsed.getTime()) ? null : date;
+            }
+            
+            if (date instanceof Date) {
+                return isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
+            }
+            
+            return null;
+        } catch (error) {
+            this.log('error', 'Error validating date parameter', { date, error: error.message });
+            return null;
+        }
+    }
+
     static getUniqueColorForDate(date, existingBookings = []) {
         try {
-            const dateString = typeof date === 'string' ? date : 
-                              (date instanceof Date ? date.toISOString().split('T')[0] : String(date));
+            const dateString = this.validateDateParameter(date);
+            if (!dateString) {
+                this.log('warn', 'Invalid date parameter in getUniqueColorForDate', date);
+                return this.getRandomColor();
+            }
             
             // Get all colors used on this date
-            const usedColors = existingBookings
+            const usedColors = (Array.isArray(existingBookings) ? existingBookings : [])
                 .filter(booking => {
                     try {
-                        return booking && booking.date === dateString;
+                        return booking && 
+                               typeof booking === 'object' && 
+                               booking.date === dateString &&
+                               booking.color;
                     } catch (error) {
                         this.log('warn', 'Error filtering booking by date', { booking, error: error.message });
                         return false;
@@ -226,70 +254,12 @@ export class Utils {
                 return unusedColors[0];
             } else {
                 // If all colors are used, return a random one (fallback)
-                this.log('warn', `All colors used for date ${dateString}, using random color`);
+                this.log('info', `All colors used for date ${dateString}, cycling through colors`);
                 return availableColors[Math.floor(Math.random() * availableColors.length)];
             }
         } catch (error) {
             this.log('error', 'Error in getUniqueColorForDate', { date, error: error.message });
             return '#8b5cf6'; // Fallback color
-        }
-    }
-
-    static getVersionedUrl(url) {
-        try {
-            if (!url || typeof url !== 'string') {
-                return url;
-            }
-            
-            const separator = url.includes('?') ? '&' : '?';
-            return `${url}${separator}v=${this.APP_VERSION}`;
-        } catch (error) {
-            this.log('error', 'Error in getVersionedUrl', { url, error: error.message });
-            return url;
-        }
-    }
-
-    static loadVersionedScript(src, onLoad = null, onError = null) {
-        try {
-            const script = document.createElement('script');
-            script.src = this.getVersionedUrl(src);
-            script.type = 'module';
-            
-            if (onLoad && typeof onLoad === 'function') {
-                script.onload = onLoad;
-            }
-            
-            if (onError && typeof onError === 'function') {
-                script.onerror = onError;
-            }
-            
-            document.head.appendChild(script);
-            return script;
-        } catch (error) {
-            this.log('error', 'Error loading versioned script', { src, error: error.message });
-            return null;
-        }
-    }
-
-    static loadVersionedStylesheet(href, onLoad = null, onError = null) {
-        try {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = this.getVersionedUrl(href);
-            
-            if (onLoad && typeof onLoad === 'function') {
-                link.onload = onLoad;
-            }
-            
-            if (onError && typeof onError === 'function') {
-                link.onerror = onError;
-            }
-            
-            document.head.appendChild(link);
-            return link;
-        } catch (error) {
-            this.log('error', 'Error loading versioned stylesheet', { href, error: error.message });
-            return null;
         }
     }
 

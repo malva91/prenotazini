@@ -35,6 +35,30 @@ function safeLog(level, message, data = null) {
     }
 }
 
+// Utility function for safe logging
+function safeLog(level, message, data = null) {
+    try {
+        const timestamp = new Date().toISOString();
+        const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${SYSTEM_VERSION}] ${message}`;
+        
+        switch (level) {
+            case 'error':
+                console.error(logMessage, data);
+                break;
+            case 'warn':
+                console.warn(logMessage, data);
+                break;
+            case 'info':
+                console.info(logMessage, data);
+                break;
+            default:
+                console.log(logMessage, data);
+        }
+    } catch (e) {
+        console.error('Error in logging function:', e);
+    }
+}
+
 // Initialize Firebase with error handling
 let db = null;
 let isFirebaseInitialized = false;
@@ -694,30 +718,6 @@ class DatabaseManager {
     // Get health status
     getHealthStatus() {
         try {
-            return {
-                isOnline: this.isOnline,
-                isFirebaseReady: this.isFirebaseReady,
-                hasDatabase: !!db,
-                retryAttempts: this.retryAttempts,
-                operationTimeout: this.operationTimeout
-            };
-        } catch (error) {
-            safeLog('error', 'Error getting health status', error);
-            return {
-                isOnline: false,
-                isFirebaseReady: false,
-                hasDatabase: false,
-                error: error.message
-            };
-        }
-    }
-}
-
-// Istanza globale del database manager con error handling
-let dbManagerInstance = null;
-
-try {
-    dbManagerInstance = new DatabaseManager();
     window.dbManager = dbManagerInstance;
     safeLog('info', 'Global database manager instance created');
 } catch (error) {

@@ -353,7 +353,10 @@ class BookingSystem {
             time: this.selectedTime,
             duration: this.settingsManager.getTimeSlotInterval(),
             status: 'pending',
-            color: Utils.getUniqueColorForDate(this.selectedDate, this.bookingManager.bookings)
+            color: Utils.getUniqueColorForDate(
+                this.selectedDate.toISOString().split('T')[0], 
+                this.bookingManager.bookings
+            )
         };
 
         try {

@@ -121,9 +121,10 @@ export class BookingManager {
             // Assign unique color for the date if not provided or if it's a new booking
             if (!sanitizedData.color) {
                 sanitizedData.color = Utils.getUniqueColorForDate(sanitizedData.date, this.bookings);
-                Utils.log('info', 'Assigned unique color for booking', { 
-                    date: sanitizedData.date, 
-                    color: sanitizedData.color 
+                Utils.log('debug', 'Assigned unique color for booking', { 
+                    date: sanitizedData.date,
+                    color: sanitizedData.color,
+                    existingBookingsCount: this.bookings.length
                 });
             }
             
