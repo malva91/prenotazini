@@ -1,16 +1,25 @@
 // Version Manager for cache busting and resource loading
 class VersionManager {
     constructor() {
-        this.currentVersion = '1.0.2';
+        this.currentVersion = '1.0.3';
         this.storageKey = 'booking_system_version';
         this.isInitialized = false;
+        this.cacheBustingEnabled = true;
         this.init();
     }
 
     init() {
         try {
+            // Controlla se il cache-busting loader è attivo
+            if (window.cacheBustingSystem) {
+                safeLog('info', 'Cache-busting system rilevato, integrazione attiva');
+                this.cacheBustingEnabled = true;
+                this.currentVersion = window.cacheBustingSystem.getVersion() || this.currentVersion;
+            }
+            
             this.checkVersionUpdate();
             this.setupVersionDisplay();
+            this.setupVersionAPI();
             this.isInitialized = true;
             safeLog('info', 'VersionManager initialized successfully');
         } catch (error) {
@@ -87,16 +96,68 @@ class VersionManager {
 
     setupVersionDisplay() {
         try {
-            // Add version info to footer or create version display
-            const versionDisplay = document.createElement('div');
-            versionDisplay.id = 'versionDisplay';
-            versionDisplay.className = 'fixed bottom-4 right-4 text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded opacity-50 hover:opacity-100 transition-opacity';
-            versionDisplay.textContent = `v${this.currentVersion}`;
-            versionDisplay.title = `Sistema Prenotazioni v${this.currentVersion}`;
+            // Aggiorna display esistente o crea nuovo
+            let versionDisplay = document.getElementById('versionDisplay');
             
-            document.body.appendChild(versionDisplay);
+            if (!versionDisplay) {
+                versionDisplay = document.createElement('div');
+                versionDisplay.id = 'versionDisplay';
+                versionDisplay.className = 'fixed bottom-4 right-4 text-xs text-gray-400 bg-gray-800 px-3 py-2 rounded-lg opacity-70 hover:opacity-100 transition-opacity cursor-pointer z-40';
+                document.body.appendChild(versionDisplay);
+            }
+            
+            versionDisplay.textContent = `v${this.currentVersion}`;
+            versionDisplay.title = `Sistema Prenotazioni v${this.currentVersion}\nClicca per dettagli versione`;
+            
+            // Aggiungi click handler per info versione
+            versionDisplay.addEventListener('click', () => this.showVersionInfo());
+            
+            // Aggiorna anche altri elementi con classe version-display
+            document.querySelectorAll('.version-display').forEach(el => {
+                el.textContent = `v${this.currentVersion}`;
+            });
+            
         } catch (error) {
             safeLog('error', 'Error setting up version display', error);
+        }
+    }
+
+    setupVersionAPI() {
+        try {
+            // API pubblica per controllo versione
+            window.versionManager = {
+                getCurrentVersion: () => this.currentVersion,
+                checkForUpdates: () => this.checkForUpdates(),
+                forceReload: () => this.forceReload(),
+                showInfo: () => this.showVersionInfo(),
+                clearCache: () => this.clearCache(),
+                isInitialized: () => this.isInitialized,
+                isCacheBustingEnabled: () => this.cacheBustingEnabled
+            };
+            
+            safeLog('info', 'Version API configurata');
+        } catch (error) {
+            safeLog('error', 'Error setting up version API', error);
+        }
+    }
+
+    showVersionInfo() {
+        try {
+            const info = {
+                'Versione': this.currentVersion,
+                'Cache-busting': this.cacheBustingEnabled ? 'Attivo' : 'Disattivo',
+                'Ultima verifica': new Date().toLocaleString('it-IT'),
+                'Browser': navigator.userAgent.split(' ').pop(),
+                'Online': navigator.onLine ? 'Sì' : 'No'
+            };
+
+            const message = Object.entries(info)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n');
+
+            alert(`📱 Sistema Prenotazioni\n\n${message}\n\n💡 Suggerimento: Usa F5 per ricaricare manualmente`);
+        } catch (error) {
+            safeLog('error', 'Error showing version info', error);
         }
     }
 
@@ -107,15 +168,21 @@ class VersionManager {
     // Force reload with cache busting
     forceReload() {
         try {
-            // Clear all caches
+            safeLog('info', 'Force reload richiesto');
+            
+            // Se cache-busting system è disponibile, usalo
+            if (window.cacheBustingSystem && typeof window.cacheBustingSystem.forceReload === 'function') {
+                window.cacheBustingSystem.forceReload();
+                return;
+            }
+            
+            // Fallback: clear cache e reload
             this.clearCache();
             
-            // Add timestamp to URL to force reload
-            const url = new URL(window.location);
-            url.searchParams.set('_t', Date.now());
-            url.searchParams.set('v', this.currentVersion);
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 100);
             
-            window.location.href = url.toString();
         } catch (error) {
             safeLog('error', 'Error forcing reload', error);
             // Fallback to simple reload
@@ -126,12 +193,25 @@ class VersionManager {
     // Check if current version is latest
     async checkForUpdates() {
         try {
-            // This could be extended to check against a server endpoint
-            // For now, just return current version info
+            safeLog('info', 'Controllo aggiornamenti...');
+            
+            // Se cache-busting system è disponibile, usalo
+            if (window.cacheBustingSystem && typeof window.cacheBustingSystem.checkUpdate === 'function') {
+                const updateAvailable = window.cacheBustingSystem.checkUpdate();
+                return {
+                    currentVersion: this.currentVersion,
+                    isLatest: !updateAvailable,
+                    updateAvailable,
+                    method: 'cache-busting-system'
+                };
+            }
+            
+            // Fallback: controllo locale
             return {
                 currentVersion: this.currentVersion,
                 isLatest: true,
-                updateAvailable: false
+                updateAvailable: false,
+                method: 'local-check'
             };
         } catch (error) {
             safeLog('error', 'Error checking for updates', error);
@@ -139,8 +219,28 @@ class VersionManager {
                 currentVersion: this.currentVersion,
                 isLatest: true,
                 updateAvailable: false,
-                error: error.message
+                error: error.message,
+                method: 'error-fallback'
             };
+        }
+    }
+
+    // Integrazione con cache-busting system
+    integrateCacheBusting() {
+        try {
+            if (window.cacheBustingSystem) {
+                this.cacheBustingEnabled = true;
+                this.currentVersion = window.cacheBustingSystem.getVersion() || this.currentVersion;
+                safeLog('info', 'Integrazione cache-busting completata', {
+                    version: this.currentVersion,
+                    systemLoaded: window.cacheBustingSystem.isLoaded()
+                });
+                return true;
+            }
+            return false;
+        } catch (error) {
+            safeLog('error', 'Error integrating cache-busting', error);
+            return false;
         }
     }
 }
@@ -173,12 +273,15 @@ function safeLog(level, message, data = null) {
 let versionManager = null;
 try {
     versionManager = new VersionManager();
-    window.versionManager = versionManager;
+    
+    // Integra con cache-busting system se disponibile
+    if (window.cacheBustingSystem) {
+        versionManager.integrateCacheBusting();
+    }
+    
 } catch (error) {
     console.error('Failed to initialize version manager:', error);
 }
-
-// Make it globally available
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {

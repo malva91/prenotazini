@@ -1,5 +1,5 @@
 // Configurazione Firebase con gestione errori migliorata e ottimizzazioni
-const SYSTEM_VERSION = '1.0.2';
+const SYSTEM_VERSION = '1.0.3';
 
 const firebaseConfig = {
     apiKey: "AIzaSyA5l7kO0FiNP0DgYxkCyNn6A-aABQeDBAo",
@@ -15,7 +15,13 @@ const firebaseConfig = {
 function safeLog(level, message, data = null) {
     try {
         const timestamp = new Date().toISOString();
-        const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${SYSTEM_VERSION}] ${message}`;
+        
+        // Ottieni versione dal sistema di cache-busting se disponibile
+        const currentVersion = window.cacheBustingSystem?.getVersion() || 
+                              window.versionManager?.getCurrentVersion() || 
+                              SYSTEM_VERSION;
+        
+        const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${currentVersion}] ${message}`;
         
         // Ottimizzazione: usa console.table per oggetti complessi
         if (data && typeof data === 'object' && Object.keys(data).length > 3) {
@@ -101,11 +107,40 @@ class DatabaseManager {
         this.setupConnectionMonitoring();
         this.setupPerformanceMonitoring();
         
+        // Integrazione con sistema versioning
+        this.integrateVersioning();
+        
         safeLog('info', 'DatabaseManager initialized with optimizations', { 
             isOnline: this.isOnline, 
             isFirebaseReady: this.isFirebaseReady,
-            cacheEnabled: true
+            cacheEnabled: true,
+            version: this.getSystemVersion()
         });
+    }
+
+    integrateVersioning() {
+        try {
+            // Ascolta cambi di versione per invalidare cache
+            if (window.addEventListener) {
+                window.addEventListener('versionChanged', () => {
+                    safeLog('info', 'Version change detected, clearing database caches');
+                    this.bookingsCache.clear();
+                    this.settingsCache = null;
+                });
+            }
+        } catch (error) {
+            safeLog('error', 'Error integrating versioning', error);
+        }
+    }
+
+    getSystemVersion() {
+        try {
+            return window.cacheBustingSystem?.getVersion() || 
+                   window.versionManager?.getCurrentVersion() || 
+                   SYSTEM_VERSION;
+        } catch (error) {
+            return SYSTEM_VERSION;
+        }
     }
     
     getConfigurableTimeout() {
@@ -885,7 +920,8 @@ class DatabaseManager {
                     retryAttempts: this.retryAttempts,
                     baseRetryDelay: this.baseRetryDelay,
                     maxRetryDelay: this.maxRetryDelay
-                }
+                },
+                version: this.getSystemVersion()
             };
         } catch (error) {
             safeLog('error', 'Error getting health status', error);
