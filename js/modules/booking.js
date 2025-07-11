@@ -118,6 +118,15 @@ export class BookingManager {
             // Ensure required fields are present and sanitize data
             const sanitizedData = this.sanitizeBookingData(bookingData);
             
+            // Assign unique color for the date if not provided or if it's a new booking
+            if (!sanitizedData.id || !sanitizedData.color) {
+                sanitizedData.color = Utils.getUniqueColorForDate(sanitizedData.date, this.bookings);
+                Utils.log('info', 'Assigned unique color for booking', { 
+                    date: sanitizedData.date, 
+                    color: sanitizedData.color 
+                });
+            }
+            
             // CRITICAL FIX: Don't pre-generate ID for new bookings
             // Let Firebase generate the ID automatically
             if (!sanitizedData.id) {
@@ -210,7 +219,7 @@ export class BookingManager {
                 duration: parseInt(data.duration) || 30,
                 status: data.status || 'pending',
                 notes: Utils.sanitizeInput(data.notes || ''),
-                color: data.color || Utils.getRandomColor(),
+                color: data.color || Utils.getUniqueColorForDate(data.date, this.bookings),
                 createdAt: data.createdAt || new Date(),
                 updatedAt: new Date()
             };
@@ -233,7 +242,8 @@ export class BookingManager {
                 hasId: !!sanitized.id,
                 firstName: sanitized.firstName,
                 lastName: sanitized.lastName,
-                status: sanitized.status
+                status: sanitized.status,
+                color: sanitized.color
             });
 
             return sanitized;

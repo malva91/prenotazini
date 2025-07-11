@@ -1,5 +1,7 @@
 // Utility functions with enhanced error handling and logging
 export class Utils {
+    static APP_VERSION = '1.0.1'; // Version for cache busting
+    
     static log(level, message, data = null) {
         const timestamp = new Date().toISOString();
         const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
@@ -179,13 +181,107 @@ export class Utils {
         try {
             const colors = [
                 '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
-                '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16'
+                '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#f472b6',
+                '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#60a5fa',
+                '#4ade80', '#facc15', '#f87171', '#818cf8', '#2dd4bf'
             ];
             const randomIndex = Math.floor(Math.random() * colors.length);
             return colors[randomIndex] || '#8b5cf6'; // Fallback color
         } catch (error) {
             this.log('error', 'Error in getRandomColor', error);
             return '#8b5cf6'; // Fallback color
+        }
+    }
+
+    static getUniqueColorForDate(date, existingBookings = []) {
+        try {
+            const dateString = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+            
+            // Get all colors used on this date
+            const usedColors = existingBookings
+                .filter(booking => booking.date === dateString)
+                .map(booking => booking.color)
+                .filter(color => color); // Remove null/undefined colors
+            
+            const availableColors = [
+                '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
+                '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#f472b6',
+                '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#60a5fa',
+                '#4ade80', '#facc15', '#f87171', '#818cf8', '#2dd4bf'
+            ];
+            
+            // Find first available color not used on this date
+            const unusedColors = availableColors.filter(color => !usedColors.includes(color));
+            
+            if (unusedColors.length > 0) {
+                // Return first unused color
+                return unusedColors[0];
+            } else {
+                // If all colors are used, return a random one (fallback)
+                this.log('warn', `All colors used for date ${dateString}, using random color`);
+                return availableColors[Math.floor(Math.random() * availableColors.length)];
+            }
+        } catch (error) {
+            this.log('error', 'Error in getUniqueColorForDate', { date, error: error.message });
+            return '#8b5cf6'; // Fallback color
+        }
+    }
+
+    static getVersionedUrl(url) {
+        try {
+            if (!url || typeof url !== 'string') {
+                return url;
+            }
+            
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}v=${this.APP_VERSION}`;
+        } catch (error) {
+            this.log('error', 'Error in getVersionedUrl', { url, error: error.message });
+            return url;
+        }
+    }
+
+    static loadVersionedScript(src, onLoad = null, onError = null) {
+        try {
+            const script = document.createElement('script');
+            script.src = this.getVersionedUrl(src);
+            script.type = 'module';
+            
+            if (onLoad && typeof onLoad === 'function') {
+                script.onload = onLoad;
+            }
+            
+            if (onError && typeof onError === 'function') {
+                script.onerror = onError;
+            }
+            
+            document.head.appendChild(script);
+            return script;
+        } catch (error) {
+            this.log('error', 'Error loading versioned script', { src, error: error.message });
+            return null;
+        }
+    }
+
+    static loadVersionedStylesheet(href, onLoad = null, onError = null) {
+        try {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = this.getVersionedUrl(href);
+            
+            if (onLoad && typeof onLoad === 'function') {
+                link.onload = onLoad;
+            }
+            
+            if (onError && typeof onError === 'function') {
+                link.onerror = onError;
+            }
+            
+            document.head.appendChild(link);
+            return link;
+        } catch (error) {
+            this.log('error', 'Error loading versioned stylesheet', { href, error: error.message });
+            return null;
         }
     }
 

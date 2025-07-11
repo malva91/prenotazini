@@ -118,12 +118,14 @@ export class UIRenderer {
             old: 'Passata'
         };
 
-        card.className = `booking-card bg-gray-800 rounded-xl p-6 border-l-4 ${statusColors[booking.status] || 'border-gray-500 bg-gray-800'} fade-in`;
+        card.className = `booking-card bg-gray-800 rounded-xl p-6 border-l-4 fade-in`;
+        card.style.borderLeftColor = booking.color || '#8b5cf6';
         
         card.innerHTML = `
             <div class="flex items-start justify-between">
                 <div class="flex-1">
                     <div class="flex items-center space-x-4 mb-3">
+                        <div class="w-4 h-4 rounded-full flex-shrink-0" style="background-color: ${booking.color || '#8b5cf6'}"></div>
                         <h3 class="text-lg font-semibold text-gray-100">
                             ${booking.firstName} ${booking.lastName}
                         </h3>

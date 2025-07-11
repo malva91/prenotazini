@@ -644,7 +644,7 @@ class BookingSystem {
                 open: openInput?.value || '09:00',
                 close: closeInput?.value || '18:00',
                 breakStart: breakStartInput?.value || '13:00',
-                breakEnd: breakEndInput?.value || '14:00'
+                color: Utils.getUniqueColorForDate(this.selectedDate, this.managers.bookingManager.bookings)
             };
         });
 
