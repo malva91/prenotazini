@@ -1,4 +1,4 @@
-// Booking management with enhanced error handling
+// Booking management ottimizzato con gestione errori migliorata
 import { Utils } from './utils.js';
 
 export class BookingManager {
@@ -10,9 +10,28 @@ export class BookingManager {
         this.isLoading = false;
         this.lastLoadTime = null;
         
-        Utils.log('info', 'BookingManager initialized');
+        // OTTIMIZZAZIONE: Gestione concorrenza migliorata
+        this.activeSaves = new Map();
+        this.saveQueue = new Map();
+        this.maxConcurrentSaves = 3;
+        
+        // OTTIMIZZAZIONE: Cache per operazioni frequenti
+        this.availabilityCache = new Map();
+        this.cacheExpiry = 2 * 60 * 1000; // 2 minuti
+        
+        // OTTIMIZZAZIONE: Batch processing
+        this.batchSize = 50;
+        this.processingBatch = false;
+        
+        // OTTIMIZZAZIONE: Real-time listener management
+        this.realtimeUnsubscribe = null;
+        this.listenerRetryCount = 0;
+        this.maxListenerRetries = 3;
+        
+        Utils.log('info', 'BookingManager initialized with optimizations');
     }
 
+    // OTTIMIZZAZIONE: Load bookings con batch processing
     async loadBookings() {
         if (this.isLoading) {
             Utils.log('warn', 'loadBookings called while already loading');
@@ -20,6 +39,7 @@ export class BookingManager {
         }
 
         this.isLoading = true;
+        const performanceId = Utils.startPerformanceMeasure('loadBookings');
         
         try {
             Utils.log('info', 'Loading bookings from database');
@@ -34,28 +54,70 @@ export class BookingManager {
                 Utils.log('error', 'loadBookings returned non-array', loadedBookings);
                 this.bookings = [];
             } else {
-                // Validate and sanitize bookings
-                this.bookings = loadedBookings.filter(booking => this.validateBooking(booking));
+                // OTTIMIZZAZIONE: Batch validation per performance
+                this.bookings = await this.batchValidateBookings(loadedBookings);
                 Utils.log('info', `Loaded ${this.bookings.length} valid bookings`);
             }
             
             this.lastLoadTime = new Date();
+            this.clearAvailabilityCache(); // Invalida cache disponibilità
             this.notifyListeners();
+            
+            Utils.endPerformanceMeasure(performanceId);
             return this.bookings;
         } catch (error) {
             Utils.log('error', 'Error loading bookings', error);
-            // Don't clear existing bookings on error, just return what we have
+            Utils.endPerformanceMeasure(performanceId);
             return this.bookings;
         } finally {
             this.isLoading = false;
         }
     }
 
+    // OTTIMIZZAZIONE: Batch validation per performance
+    async batchValidateBookings(bookings) {
+        const validBookings = [];
+        const batchSize = this.batchSize;
+        
+        for (let i = 0; i < bookings.length; i += batchSize) {
+            const batch = bookings.slice(i, i + batchSize);
+            
+            // Process batch
+            const validBatch = batch.filter(booking => {
+                try {
+                    return this.validateBooking(booking);
+                } catch (error) {
+                    Utils.log('warn', 'Error validating booking in batch', { 
+                        bookingId: booking?.id, 
+                        error: error.message 
+                    });
+                    return false;
+                }
+            });
+            
+            validBookings.push(...validBatch);
+            
+            // OTTIMIZZAZIONE: Yield control per non bloccare UI
+            if (i + batchSize < bookings.length) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+        
+        return validBookings;
+    }
+
+    // OTTIMIZZAZIONE: Validation migliorata con cache
     validateBooking(booking) {
         try {
             if (!booking || typeof booking !== 'object') {
                 Utils.log('warn', 'Invalid booking object', booking);
                 return false;
+            }
+
+            // OTTIMIZZAZIONE: Cache per validazioni ripetute
+            const bookingKey = `${booking.id}_${booking.updatedAt || booking.createdAt}`;
+            if (this.validationCache && this.validationCache.has(bookingKey)) {
+                return this.validationCache.get(bookingKey);
             }
 
             const required = ['id', 'firstName', 'lastName', 'email', 'phone', 'date', 'time'];
@@ -91,6 +153,14 @@ export class BookingManager {
             booking.phone = Utils.sanitizeInput(booking.phone);
             booking.notes = Utils.sanitizeInput(booking.notes || '');
 
+            // OTTIMIZZAZIONE: Cache risultato validazione
+            if (!this.validationCache) {
+                this.validationCache = new Map();
+            }
+            if (this.validationCache.size < 1000) { // Limita dimensione cache
+                this.validationCache.set(bookingKey, true);
+            }
+
             return true;
         } catch (error) {
             Utils.log('error', 'Error validating booking', { booking, error: error.message });
@@ -98,18 +168,24 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Save booking con queue management
     async saveBooking(bookingData) {
-        // Prevent concurrent saves for the same booking
-        const saveKey = bookingData.id || 'new_booking';
-        if (this._savingBookings && this._savingBookings.has(saveKey)) {
-            Utils.log('warn', 'Booking save already in progress', { id: saveKey });
-            return { success: false, error: 'Save already in progress' };
-        }
+        const saveKey = bookingData.id || `new_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        if (!this._savingBookings) {
-            this._savingBookings = new Set();
+        // OTTIMIZZAZIONE: Gestione concorrenza migliorata
+        if (this.activeSaves.has(saveKey)) {
+            Utils.log('warn', 'Save operation already in progress', { id: saveKey });
+            return { success: false, error: 'Save operation already in progress' };
         }
-        this._savingBookings.add(saveKey);
+
+        // OTTIMIZZAZIONE: Limita salvataggi concorrenti
+        if (this.activeSaves.size >= this.maxConcurrentSaves) {
+            Utils.log('info', 'Max concurrent saves reached, queuing operation', { id: saveKey });
+            return this.queueSaveOperation(saveKey, bookingData);
+        }
+
+        this.activeSaves.set(saveKey, Date.now());
+        const performanceId = Utils.startPerformanceMeasure(`saveBooking_${saveKey}`);
         
         try {
             Utils.log('info', 'Saving booking', { 
@@ -130,24 +206,13 @@ export class BookingManager {
             // Ensure required fields are present and sanitize data
             const sanitizedData = this.sanitizeBookingData(bookingData);
             
-            // Assign unique color for the date if not provided or if it's a new booking
+            // OTTIMIZZAZIONE: Assign unique color più efficiente
             if (!sanitizedData.color) {
                 sanitizedData.color = Utils.getUniqueColorForDate(sanitizedData.date, this.bookings);
                 Utils.log('debug', 'Assigned unique color for booking', { 
                     date: sanitizedData.date,
-                    color: sanitizedData.color,
-                    existingBookingsCount: this.bookings.length
+                    color: sanitizedData.color
                 });
-            }
-            
-            // CRITICAL FIX: Don't pre-generate ID for new bookings
-            // Let Firebase generate the ID automatically
-            if (!sanitizedData.id) {
-                // Remove any undefined id to ensure clean creation
-                delete sanitizedData.id;
-                Utils.log('info', 'Creating new booking without pre-generated ID');
-            } else {
-                Utils.log('info', 'Updating existing booking', { id: sanitizedData.id });
             }
             
             const result = await this.dbManager.saveBooking(sanitizedData);
@@ -158,17 +223,24 @@ export class BookingManager {
                     originalId: bookingData.id 
                 });
                 
-                // Update the booking data with the returned ID if it was a new booking
+                // OTTIMIZZAZIONE: Update locale immediato per UX migliore
                 if (!bookingData.id && result.id) {
                     sanitizedData.id = result.id;
+                    this.addBookingToLocal(sanitizedData);
+                } else if (bookingData.id) {
+                    this.updateBookingInLocal(sanitizedData);
                 }
                 
-                // Reload bookings to ensure consistency
-                await this.loadBookings();
+                // Invalida cache disponibilità
+                this.clearAvailabilityCache();
+                
+                // Process queued operations
+                this.processQueuedSaves();
             } else {
                 Utils.log('error', 'Failed to save booking', result);
             }
             
+            Utils.endPerformanceMeasure(performanceId);
             return result;
         } catch (error) {
             Utils.log('error', 'Error saving booking', { 
@@ -179,9 +251,69 @@ export class BookingManager {
                 }, 
                 error: error.message 
             });
+            Utils.endPerformanceMeasure(performanceId);
             return { success: false, error: error.message };
         } finally {
-            this._savingBookings.delete(saveKey);
+            this.activeSaves.delete(saveKey);
+        }
+    }
+
+    // OTTIMIZZAZIONE: Queue management per salvataggi
+    async queueSaveOperation(saveKey, bookingData) {
+        return new Promise((resolve) => {
+            this.saveQueue.set(saveKey, {
+                bookingData,
+                resolve,
+                timestamp: Date.now()
+            });
+            
+            Utils.log('info', 'Save operation queued', { 
+                id: saveKey, 
+                queueSize: this.saveQueue.size 
+            });
+        });
+    }
+
+    async processQueuedSaves() {
+        if (this.saveQueue.size === 0 || this.activeSaves.size >= this.maxConcurrentSaves) {
+            return;
+        }
+
+        const [saveKey, operation] = this.saveQueue.entries().next().value;
+        this.saveQueue.delete(saveKey);
+        
+        try {
+            const result = await this.saveBooking(operation.bookingData);
+            operation.resolve(result);
+        } catch (error) {
+            Utils.log('error', 'Error processing queued save', { saveKey, error: error.message });
+            operation.resolve({ success: false, error: error.message });
+        }
+    }
+
+    // OTTIMIZZAZIONE: Local booking management per UX migliore
+    addBookingToLocal(booking) {
+        try {
+            // Evita duplicati
+            const existingIndex = this.bookings.findIndex(b => b.id === booking.id);
+            if (existingIndex === -1) {
+                this.bookings.unshift(booking); // Aggiungi in cima
+                this.notifyListeners();
+            }
+        } catch (error) {
+            Utils.log('error', 'Error adding booking to local array', error);
+        }
+    }
+
+    updateBookingInLocal(booking) {
+        try {
+            const index = this.bookings.findIndex(b => b.id === booking.id);
+            if (index !== -1) {
+                this.bookings[index] = { ...this.bookings[index], ...booking };
+                this.notifyListeners();
+            }
+        } catch (error) {
+            Utils.log('error', 'Error updating booking in local array', error);
         }
     }
 
@@ -231,7 +363,7 @@ export class BookingManager {
                 phone: Utils.sanitizeInput(data.phone),
                 date: data.date,
                 time: data.time,
-                duration: parseInt(data.duration) || 30,
+                duration: Math.max(15, Math.min(480, parseInt(data.duration) || 30)),
                 status: data.status || 'pending',
                 notes: Utils.sanitizeInput(data.notes || ''),
                 color: data.color || Utils.getUniqueColorForDate(data.date, this.bookings),
@@ -243,9 +375,6 @@ export class BookingManager {
             if (data.id) {
                 sanitized.id = data.id;
             }
-
-            // Ensure duration is within reasonable bounds
-            sanitized.duration = Math.max(15, Math.min(480, sanitized.duration));
 
             // Ensure status is valid
             const validStatuses = ['pending', 'confirmed', 'cancelled', 'old'];
@@ -268,6 +397,7 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Delete con cleanup locale
     async deleteBooking(id) {
         try {
             Utils.log('info', 'Deleting booking', { id });
@@ -284,11 +414,11 @@ export class BookingManager {
             
             if (result.success) {
                 Utils.log('info', 'Booking deleted successfully', { id });
-                // Remove from local array immediately
+                
+                // OTTIMIZZAZIONE: Remove from local array immediately
                 this.bookings = this.bookings.filter(booking => booking.id !== id);
+                this.clearAvailabilityCache(); // Invalida cache
                 this.notifyListeners();
-                // Reload to ensure consistency
-                await this.loadBookings();
             } else {
                 Utils.log('error', 'Failed to delete booking', result);
             }
@@ -300,6 +430,7 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Get bookings con cache
     getBookingsForDate(date) {
         try {
             if (!Utils.isValidDate(date)) {
@@ -308,6 +439,16 @@ export class BookingManager {
             }
 
             const dateString = new Date(date).toISOString().split('T')[0];
+            
+            // OTTIMIZZAZIONE: Check cache first
+            const cacheKey = `date_${dateString}`;
+            if (this.availabilityCache.has(cacheKey)) {
+                const cached = this.availabilityCache.get(cacheKey);
+                if (Date.now() - cached.timestamp < this.cacheExpiry) {
+                    return cached.bookings;
+                }
+            }
+
             const dayBookings = this.bookings.filter(booking => {
                 try {
                     return booking.date === dateString;
@@ -317,11 +458,27 @@ export class BookingManager {
                 }
             });
 
+            // OTTIMIZZAZIONE: Cache result
+            this.availabilityCache.set(cacheKey, {
+                bookings: dayBookings,
+                timestamp: Date.now()
+            });
+
             Utils.log('debug', `Found ${dayBookings.length} bookings for date ${dateString}`);
             return dayBookings;
         } catch (error) {
             Utils.log('error', 'Error in getBookingsForDate', { date, error: error.message });
             return [];
+        }
+    }
+
+    // OTTIMIZZAZIONE: Clear availability cache
+    clearAvailabilityCache() {
+        try {
+            this.availabilityCache.clear();
+            Utils.log('debug', 'Availability cache cleared');
+        } catch (error) {
+            Utils.log('error', 'Error clearing availability cache', error);
         }
     }
 
@@ -352,11 +509,21 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Time slot availability con cache
     isTimeSlotAvailable(date, time, duration = 30, excludeId = null) {
         try {
             if (!Utils.isValidDate(date) || !time) {
                 Utils.log('warn', 'isTimeSlotAvailable called with invalid parameters', { date, time });
                 return false;
+            }
+
+            // OTTIMIZZAZIONE: Cache key per availability
+            const cacheKey = `availability_${date}_${time}_${duration}_${excludeId || 'none'}`;
+            if (this.availabilityCache.has(cacheKey)) {
+                const cached = this.availabilityCache.get(cacheKey);
+                if (Date.now() - cached.timestamp < this.cacheExpiry) {
+                    return cached.available;
+                }
             }
 
             const dayBookings = this.getBookingsForDate(date)
@@ -379,15 +546,21 @@ export class BookingManager {
                     return (requestedStart < bookingEnd && requestedEnd > bookingStart);
                 } catch (error) {
                     Utils.log('warn', 'Error checking booking overlap', { booking: booking.id, error: error.message });
-                    return false; // If we can't check, assume no conflict
+                    return false;
                 }
+            });
+
+            // OTTIMIZZAZIONE: Cache result
+            this.availabilityCache.set(cacheKey, {
+                available: isAvailable,
+                timestamp: Date.now()
             });
 
             Utils.log('debug', `Time slot ${time} availability for ${date}: ${isAvailable}`);
             return isAvailable;
         } catch (error) {
             Utils.log('error', 'Error in isTimeSlotAvailable', { date, time, duration, error: error.message });
-            return false; // Safer to assume not available
+            return false;
         }
     }
 
@@ -459,7 +632,8 @@ export class BookingManager {
         }
     }
 
-    updateOldBookings() {
+    // OTTIMIZZAZIONE: Update old bookings con batch processing
+    async updateOldBookings() {
         try {
             const today = new Date();
             const todayString = today.toISOString().split('T')[0];
@@ -468,8 +642,10 @@ export class BookingManager {
             );
 
             let updatedCount = 0;
+            const bookingsToUpdate = [];
 
-            this.bookings.forEach(async (booking) => {
+            // OTTIMIZZAZIONE: Identifica bookings da aggiornare prima
+            this.bookings.forEach((booking) => {
                 try {
                     if (booking.status === 'confirmed') {
                         const bookingDate = booking.date;
@@ -477,21 +653,28 @@ export class BookingManager {
                         const bookingDuration = booking.duration || 30;
                         const bookingEndTime = bookingTime + bookingDuration;
 
-                        // Check if booking is in the past
                         if (bookingDate < todayString || 
                             (bookingDate === todayString && bookingEndTime <= currentTime)) {
-                            
-                            booking.status = 'old';
-                            await this.saveBooking(booking);
-                            updatedCount++;
+                            bookingsToUpdate.push(booking);
                         }
                     }
                 } catch (error) {
-                    Utils.log('error', 'Error updating old booking', { booking: booking.id, error: error.message });
+                    Utils.log('error', 'Error checking old booking', { booking: booking.id, error: error.message });
                 }
             });
 
-            if (updatedCount > 0) {
+            // OTTIMIZZAZIONE: Batch update
+            if (bookingsToUpdate.length > 0) {
+                for (const booking of bookingsToUpdate) {
+                    try {
+                        booking.status = 'old';
+                        await this.saveBooking(booking);
+                        updatedCount++;
+                    } catch (error) {
+                        Utils.log('error', 'Error updating old booking', { booking: booking.id, error: error.message });
+                    }
+                }
+
                 Utils.log('info', `Updated ${updatedCount} bookings to old status`);
             }
         } catch (error) {
@@ -499,6 +682,7 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Filter bookings con performance migliorata
     filterBookings(searchTerm = '', statusFilter = 'all') {
         try {
             if (!Array.isArray(this.bookings)) {
@@ -506,9 +690,10 @@ export class BookingManager {
                 return [];
             }
 
-            let filtered = [...this.bookings];
+            const performanceId = Utils.startPerformanceMeasure('filterBookings');
+            let filtered = this.bookings;
 
-            // Filter by status
+            // OTTIMIZZAZIONE: Filter by status first (più efficiente)
             if (statusFilter && statusFilter !== 'all') {
                 filtered = filtered.filter(booking => {
                     try {
@@ -520,22 +705,28 @@ export class BookingManager {
                 });
             }
 
-            // Filter by search term
+            // OTTIMIZZAZIONE: Search term processing
             if (searchTerm && typeof searchTerm === 'string') {
                 const term = searchTerm.toLowerCase().trim();
                 if (term) {
+                    // OTTIMIZZAZIONE: Pre-compile search terms
+                    const searchTerms = term.split(' ').filter(t => t.length > 0);
+                    
                     filtered = filtered.filter(booking => {
                         try {
-                            const searchableFields = [
+                            const searchableText = [
                                 booking.firstName,
                                 booking.lastName,
                                 booking.email,
                                 booking.phone,
                                 booking.notes
-                            ].filter(field => field); // Remove null/undefined fields
+                            ].filter(field => field)
+                             .join(' ')
+                             .toLowerCase();
 
-                            return searchableFields.some(field => 
-                                field.toString().toLowerCase().includes(term)
+                            // OTTIMIZZAZIONE: All terms must match
+                            return searchTerms.every(searchTerm => 
+                                searchableText.includes(searchTerm)
                             );
                         } catch (error) {
                             Utils.log('warn', 'Error filtering booking by search term', { booking: booking.id, error: error.message });
@@ -545,6 +736,7 @@ export class BookingManager {
                 }
             }
 
+            Utils.endPerformanceMeasure(performanceId);
             Utils.log('debug', `Filtered ${filtered.length} bookings from ${this.bookings.length} total`);
             return filtered;
         } catch (error) {
@@ -553,7 +745,7 @@ export class BookingManager {
         }
     }
 
-    // Event listeners for real-time updates
+    // OTTIMIZZAZIONE: Event listeners con gestione memoria migliorata
     addListener(callback) {
         try {
             if (typeof callback !== 'function') {
@@ -578,6 +770,7 @@ export class BookingManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Notify listeners con error isolation
     notifyListeners() {
         try {
             if (!Array.isArray(this.listeners)) {
@@ -588,23 +781,26 @@ export class BookingManager {
 
             Utils.log('debug', `Notifying ${this.listeners.length} listeners`);
             
-            this.listeners.forEach((callback, index) => {
-                try {
-                    if (typeof callback === 'function') {
-                        callback(this.bookings);
-                    } else {
-                        Utils.log('warn', `Listener at index ${index} is not a function`);
+            // OTTIMIZZAZIONE: Async notification per non bloccare UI
+            setTimeout(() => {
+                this.listeners.forEach((callback, index) => {
+                    try {
+                        if (typeof callback === 'function') {
+                            callback(this.bookings);
+                        } else {
+                            Utils.log('warn', `Listener at index ${index} is not a function`);
+                        }
+                    } catch (error) {
+                        Utils.log('error', `Error in listener at index ${index}`, error);
                     }
-                } catch (error) {
-                    Utils.log('error', `Error in listener at index ${index}`, error);
-                }
-            });
+                });
+            }, 0);
         } catch (error) {
             Utils.log('error', 'Error in notifyListeners', error);
         }
     }
 
-    // Setup real-time listener
+    // OTTIMIZZAZIONE: Real-time listener con retry logic
     setupRealTimeListener() {
         try {
             if (!this.dbManager || typeof this.dbManager.onBookingsChange !== 'function') {
@@ -614,48 +810,95 @@ export class BookingManager {
 
             Utils.log('info', 'Setting up real-time listener');
             
-            // Store the unsubscribe function
-            this._realtimeUnsubscribe = this.dbManager.onBookingsChange((bookings) => {
+            const setupListener = () => {
                 try {
-                    Utils.log('info', `Real-time update received: ${bookings?.length || 0} bookings`);
-                    
-                    if (Array.isArray(bookings)) {
-                        // Validate all bookings before updating
-                        this.bookings = bookings.filter(booking => this.validateBooking(booking));
-                        this.updateOldBookings();
-                        this.notifyListeners();
-                    } else {
-                        Utils.log('warn', 'Real-time update received non-array bookings', bookings);
-                    }
+                    this.realtimeUnsubscribe = this.dbManager.onBookingsChange((bookings) => {
+                        try {
+                            Utils.log('info', `Real-time update received: ${bookings?.length || 0} bookings`);
+                            
+                            if (Array.isArray(bookings)) {
+                                // OTTIMIZZAZIONE: Batch validate bookings
+                                this.batchValidateBookings(bookings).then(validBookings => {
+                                    this.bookings = validBookings;
+                                    this.clearAvailabilityCache();
+                                    this.updateOldBookings();
+                                    this.notifyListeners();
+                                });
+                            } else {
+                                Utils.log('warn', 'Real-time update received non-array bookings', bookings);
+                            }
+                            
+                            // Reset retry count on success
+                            this.listenerRetryCount = 0;
+                        } catch (error) {
+                            Utils.log('error', 'Error processing real-time update', error);
+                            this.handleListenerError();
+                        }
+                    });
                 } catch (error) {
-                    Utils.log('error', 'Error processing real-time update', error);
+                    Utils.log('error', 'Error setting up real-time listener', error);
+                    this.handleListenerError();
                 }
-            });
+            };
+
+            setupListener();
+            return () => this.cleanup();
             
-            return this._realtimeUnsubscribe;
         } catch (error) {
-            Utils.log('error', 'Error setting up real-time listener', error);
+            Utils.log('error', 'Error in setupRealTimeListener', error);
             return null;
         }
     }
+
+    // OTTIMIZZAZIONE: Handle listener errors con retry
+    handleListenerError() {
+        this.listenerRetryCount++;
+        
+        if (this.listenerRetryCount <= this.maxListenerRetries) {
+            const retryDelay = Math.pow(2, this.listenerRetryCount) * 1000; // Exponential backoff
+            
+            Utils.log('warn', `Real-time listener error, retrying in ${retryDelay}ms (attempt ${this.listenerRetryCount})`);
+            
+            setTimeout(() => {
+                this.setupRealTimeListener();
+            }, retryDelay);
+        } else {
+            Utils.log('error', 'Max real-time listener retries reached, giving up');
+        }
+    }
     
-    // Cleanup method
+    // OTTIMIZZAZIONE: Cleanup method migliorato
     cleanup() {
         try {
-            if (this._realtimeUnsubscribe && typeof this._realtimeUnsubscribe === 'function') {
-                this._realtimeUnsubscribe();
-                this._realtimeUnsubscribe = null;
+            Utils.log('info', 'Cleaning up BookingManager');
+            
+            // Cleanup real-time listener
+            if (this.realtimeUnsubscribe && typeof this.realtimeUnsubscribe === 'function') {
+                this.realtimeUnsubscribe();
+                this.realtimeUnsubscribe = null;
                 Utils.log('info', 'Real-time listener unsubscribed');
             }
             
+            // Clear all caches
+            this.clearAvailabilityCache();
+            if (this.validationCache) {
+                this.validationCache.clear();
+            }
+            
+            // Clear listeners
             this.listeners = [];
-            this._savingBookings?.clear();
+            
+            // Clear active operations
+            this.activeSaves.clear();
+            this.saveQueue.clear();
+            
+            Utils.log('info', 'BookingManager cleanup completed');
         } catch (error) {
-            Utils.log('error', 'Error during cleanup', error);
+            Utils.log('error', 'Error during BookingManager cleanup', error);
         }
     }
 
-    // Health check method
+    // OTTIMIZZAZIONE: Health status dettagliato
     getHealthStatus() {
         try {
             return {
@@ -664,7 +907,19 @@ export class BookingManager {
                 listenersCount: this.listeners?.length || 0,
                 lastLoadTime: this.lastLoadTime,
                 hasDbManager: !!this.dbManager,
-                hasSettingsManager: !!this.settingsManager
+                hasSettingsManager: !!this.settingsManager,
+                performance: {
+                    activeSaves: this.activeSaves.size,
+                    queuedSaves: this.saveQueue.size,
+                    maxConcurrentSaves: this.maxConcurrentSaves,
+                    cacheSize: this.availabilityCache.size,
+                    validationCacheSize: this.validationCache?.size || 0
+                },
+                realtime: {
+                    hasListener: !!this.realtimeUnsubscribe,
+                    retryCount: this.listenerRetryCount,
+                    maxRetries: this.maxListenerRetries
+                }
             };
         } catch (error) {
             Utils.log('error', 'Error getting health status', error);

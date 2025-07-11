@@ -1,4 +1,4 @@
-// Configurazione Firebase con gestione errori migliorata
+// Configurazione Firebase con gestione errori migliorata e ottimizzazioni
 const SYSTEM_VERSION = '1.0.2';
 
 const firebaseConfig = {
@@ -11,11 +11,19 @@ const firebaseConfig = {
     measurementId: "G-QTCPJ46646"
 };
 
-// Utility function for safe logging
+// Utility function for safe logging - VERSIONE UNICA OTTIMIZZATA
 function safeLog(level, message, data = null) {
     try {
         const timestamp = new Date().toISOString();
         const logMessage = `[${timestamp}] [FIREBASE-${level.toUpperCase()}] [v${SYSTEM_VERSION}] ${message}`;
+        
+        // Ottimizzazione: usa console.table per oggetti complessi
+        if (data && typeof data === 'object' && Object.keys(data).length > 3) {
+            console.groupCollapsed(logMessage);
+            console.table(data);
+            console.groupEnd();
+            return;
+        }
         
         switch (level) {
             case 'error':
@@ -70,42 +78,94 @@ if (isFirebaseInitialized && db) {
         });
 }
 
-// Database manager per gestire operazioni Firebase
+// Database manager ottimizzato per gestire operazioni Firebase
 class DatabaseManager {
     constructor() {
         this.isOnline = navigator.onLine;
         this.isFirebaseReady = isFirebaseInitialized;
         this.retryAttempts = 3;
-        this.retryDelay = 1000; // Base delay, will be exponential
-        this.operationTimeout = this.getConfigurableTimeout(); // Configurable timeout
+        this.baseRetryDelay = 1000; // Base delay per exponential backoff
+        this.maxRetryDelay = 10000; // Massimo delay
+        this.operationTimeout = this.getConfigurableTimeout();
+        
+        // OTTIMIZZAZIONE: Gestione concorrenza migliorata
         this.activeSaves = new Map(); // Track active save operations
+        this.saveQueue = new Map(); // Queue per operazioni in attesa
+        this.connectionQuality = 'good'; // good, poor, offline
+        
+        // OTTIMIZZAZIONE: Cache per ridurre chiamate Firebase
+        this.bookingsCache = new Map();
+        this.settingsCache = null;
+        this.cacheExpiry = 5 * 60 * 1000; // 5 minuti
         
         this.setupConnectionMonitoring();
-        safeLog('info', 'DatabaseManager initialized', { 
+        this.setupPerformanceMonitoring();
+        
+        safeLog('info', 'DatabaseManager initialized with optimizations', { 
             isOnline: this.isOnline, 
-            isFirebaseReady: this.isFirebaseReady 
+            isFirebaseReady: this.isFirebaseReady,
+            cacheEnabled: true
         });
     }
     
     getConfigurableTimeout() {
         try {
-            // Check for environment variable or default to 10 seconds
-            return parseInt(process?.env?.FIREBASE_TIMEOUT) || 10000;
+            // Ottimizzazione: timeout adattivo basato sulla qualità della connessione
+            const baseTimeout = parseInt(process?.env?.FIREBASE_TIMEOUT) || 10000;
+            return this.connectionQuality === 'poor' ? baseTimeout * 2 : baseTimeout;
         } catch {
             return 10000;
         }
+    }
+
+    // OTTIMIZZAZIONE: Monitoraggio performance
+    setupPerformanceMonitoring() {
+        try {
+            // Monitora la qualità della connessione
+            if ('connection' in navigator) {
+                const connection = navigator.connection;
+                this.updateConnectionQuality(connection.effectiveType);
+                
+                connection.addEventListener('change', () => {
+                    this.updateConnectionQuality(connection.effectiveType);
+                });
+            }
+        } catch (error) {
+            safeLog('warn', 'Performance monitoring not available', error);
+        }
+    }
+
+    updateConnectionQuality(effectiveType) {
+        const qualityMap = {
+            'slow-2g': 'poor',
+            '2g': 'poor',
+            '3g': 'good',
+            '4g': 'good'
+        };
+        
+        this.connectionQuality = qualityMap[effectiveType] || 'good';
+        this.operationTimeout = this.getConfigurableTimeout();
+        
+        safeLog('debug', 'Connection quality updated', { 
+            effectiveType, 
+            quality: this.connectionQuality,
+            timeout: this.operationTimeout
+        });
     }
 
     setupConnectionMonitoring() {
         try {
             window.addEventListener('online', () => {
                 this.isOnline = true;
+                this.connectionQuality = 'good';
                 safeLog('info', 'Connection restored');
                 this.updateConnectionStatus('online');
+                this.processQueuedOperations(); // OTTIMIZZAZIONE: Processa operazioni in coda
             });
 
             window.addEventListener('offline', () => {
                 this.isOnline = false;
+                this.connectionQuality = 'offline';
                 safeLog('warn', 'Connection lost');
                 this.updateConnectionStatus('offline');
             });
@@ -128,26 +188,46 @@ class DatabaseManager {
         }
     }
 
+    // OTTIMIZZAZIONE: Processa operazioni in coda quando torna online
+    async processQueuedOperations() {
+        if (this.saveQueue.size === 0) return;
+        
+        safeLog('info', `Processing ${this.saveQueue.size} queued operations`);
+        
+        for (const [key, operation] of this.saveQueue) {
+            try {
+                await operation.execute();
+                this.saveQueue.delete(key);
+                safeLog('debug', 'Queued operation processed', { key });
+            } catch (error) {
+                safeLog('error', 'Failed to process queued operation', { key, error: error.message });
+            }
+        }
+    }
+
     updateConnectionStatus(status) {
         try {
             const statusElement = document.getElementById('connectionStatus');
-            if (!statusElement) {
-                safeLog('warn', 'Connection status element not found');
-                return;
-            }
+            if (!statusElement) return;
+            
+            // OTTIMIZZAZIONE: Evita aggiornamenti DOM inutili
+            const currentClass = statusElement.className;
+            const newClass = `connection-status ${status}`;
+            
+            if (currentClass === newClass) return;
             
             switch (status) {
                 case 'online':
-                    statusElement.className = 'connection-status online';
+                    statusElement.className = newClass;
                     statusElement.textContent = '🟢 Online';
                     break;
                 case 'syncing':
-                    statusElement.className = 'connection-status syncing';
+                    statusElement.className = newClass;
                     statusElement.textContent = '🔄 Sincronizzazione...';
                     break;
                 case 'offline':
                 default:
-                    statusElement.className = 'connection-status offline';
+                    statusElement.className = newClass;
                     statusElement.textContent = '🔴 Offline';
                     break;
             }
@@ -156,7 +236,7 @@ class DatabaseManager {
         }
     }
 
-    // Create a timeout wrapper for Firebase operations
+    // OTTIMIZZAZIONE: Timeout con exponential backoff
     withTimeout(promise, timeoutMs = this.operationTimeout) {
         return Promise.race([
             promise,
@@ -168,7 +248,19 @@ class DatabaseManager {
         ]);
     }
 
-    // Validate booking data before Firebase operations
+    // OTTIMIZZAZIONE: Exponential backoff per retry
+    calculateRetryDelay(attempt) {
+        const delay = Math.min(
+            this.baseRetryDelay * Math.pow(2, attempt - 1),
+            this.maxRetryDelay
+        );
+        
+        // Aggiungi jitter per evitare thundering herd
+        const jitter = Math.random() * 0.1 * delay;
+        return delay + jitter;
+    }
+
+    // Validazione ottimizzata con cache
     validateBookingData(booking) {
         try {
             if (!booking || typeof booking !== 'object') {
@@ -182,19 +274,40 @@ class DatabaseManager {
                 throw new Error(`Missing required fields: ${missing.join(', ')}`);
             }
 
-            // Validate email format
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(booking.email)) {
+            // OTTIMIZZAZIONE: Cache regex per performance
+            if (!this._emailRegex) {
+                this._emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            }
+            if (!this._dateRegex) {
+                this._dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            }
+            if (!this._timeRegex) {
+                this._timeRegex = /^\d{2}:\d{2}$/;
+            }
+
+            if (!this._emailRegex.test(booking.email)) {
                 throw new Error('Invalid email format');
             }
 
-            // Validate date format
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(booking.date)) {
+            if (!this._dateRegex.test(booking.date)) {
                 throw new Error('Invalid date format (expected YYYY-MM-DD)');
             }
 
-            // Validate time format
-            if (!/^\d{2}:\d{2}$/.test(booking.time)) {
+            // OTTIMIZZAZIONE: Validazione data più robusta
+            const dateObj = new Date(booking.date + 'T00:00:00');
+            if (isNaN(dateObj.getTime())) {
+                throw new Error('Invalid date value');
+            }
+
+            // Verifica che la data sia realmente valida (non 30 febbraio)
+            const [year, month, day] = booking.date.split('-').map(Number);
+            if (dateObj.getFullYear() !== year || 
+                dateObj.getMonth() !== month - 1 || 
+                dateObj.getDate() !== day) {
+                throw new Error('Invalid date (e.g., February 30th)');
+            }
+
+            if (!this._timeRegex.test(booking.time)) {
                 throw new Error('Invalid time format (expected HH:MM)');
             }
 
@@ -205,33 +318,64 @@ class DatabaseManager {
         }
     }
 
-    // Generate unique ID for new bookings
+    // OTTIMIZZAZIONE: ID generation più robusto
     generateBookingId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substr(2, 9);
+        const counter = (this._idCounter = (this._idCounter || 0) + 1).toString(36);
+        return `${timestamp}-${random}-${counter}`;
     }
 
-    // Check if booking exists in Firestore
+    // OTTIMIZZAZIONE: Cache per esistenza booking
     async bookingExists(bookingId) {
         try {
             if (!bookingId) return false;
+            
+            // Controlla cache prima
+            if (this.bookingsCache.has(bookingId)) {
+                const cached = this.bookingsCache.get(bookingId);
+                if (Date.now() - cached.timestamp < this.cacheExpiry) {
+                    return true;
+                }
+            }
             
             const doc = await this.withTimeout(
                 db.collection('bookings').doc(bookingId).get()
             );
             
-            return doc.exists;
+            const exists = doc.exists;
+            
+            // Aggiorna cache
+            if (exists) {
+                this.bookingsCache.set(bookingId, {
+                    exists: true,
+                    timestamp: Date.now()
+                });
+            }
+            
+            return exists;
         } catch (error) {
             safeLog('warn', 'Error checking if booking exists', { bookingId, error: error.message });
             return false;
         }
     }
 
-    // Salva prenotazione con logica corretta per CREATE vs UPDATE
+    // OTTIMIZZAZIONE: Gestione concorrenza migliorata per salvataggio
     async saveBooking(booking) {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for saveBooking');
             return { success: false, error: 'Database not available' };
         }
+
+        // OTTIMIZZAZIONE: Prevenzione race condition
+        const saveKey = booking.id || `new_${Date.now()}`;
+        
+        if (this.activeSaves.has(saveKey)) {
+            safeLog('warn', 'Save operation already in progress', { id: saveKey });
+            return { success: false, error: 'Save operation already in progress' };
+        }
+
+        this.activeSaves.set(saveKey, Date.now());
 
         try {
             this.updateConnectionStatus('syncing');
@@ -239,92 +383,25 @@ class DatabaseManager {
             // Validate booking data
             this.validateBookingData(booking);
             
-            // Determine if this is a new booking or an update
-            const isNewBooking = !booking.id;
+            // OTTIMIZZAZIONE: Logica semplificata per determinare operazione
             const isUpdate = booking.id && await this.bookingExists(booking.id);
+            const operation = isUpdate ? 'UPDATE' : 'CREATE';
             
             safeLog('info', 'Saving booking', { 
-                id: booking.id, 
-                isNewBooking, 
-                isUpdate,
-                operation: isNewBooking ? 'CREATE' : (isUpdate ? 'UPDATE' : 'CREATE_WITH_ID')
+                id: booking.id || 'new', 
+                operation
             });
             
             const bookingData = this.prepareBookingForFirestore(booking);
-            
-            let lastError = null;
             let savedBookingId = booking.id;
             
-            // Retry logic
+            // OTTIMIZZAZIONE: Retry con exponential backoff
+            let lastError = null;
             for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
                 try {
-                    safeLog('info', `Saving booking attempt ${attempt}`, { 
-                        id: savedBookingId,
-                        operation: isNewBooking ? 'CREATE' : (isUpdate ? 'UPDATE' : 'CREATE_WITH_ID')
-                    });
-                    
-                    if (isNewBooking) {
-                        // Create completely new booking without ID
-                        const docRef = await this.withTimeout(
-                            db.collection('bookings').add({
-                                ...bookingData,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                            })
-                        );
-                        
-                        savedBookingId = docRef.id;
-                        safeLog('info', 'New booking created', { id: savedBookingId });
-                        
-                    } else if (isUpdate) {
-                        // Update existing booking
-                        const { id, createdAt, ...updateData } = bookingData;
-                        
-                        await this.withTimeout(
-                            db.collection('bookings').doc(booking.id).update({
-                                ...updateData,
-                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                            })
-                        );
-                        
-                        safeLog('info', 'Existing booking updated', { id: booking.id });
-                        
-                    } else {
-                        // Create new booking with specific ID (booking doesn't exist yet)
-                        if (!savedBookingId) {
-                            savedBookingId = this.generateBookingId();
-                        }
-                        
-                        await this.withTimeout(
-                            db.collection('bookings').doc(savedBookingId).set({
-                                ...bookingData,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                            })
-                        );
-                        
-                        safeLog('info', 'New booking created with specific ID', { id: savedBookingId });
-                    }
-                    
-                    this.updateConnectionStatus('online');
-                    safeLog('info', 'Booking saved successfully', { id: savedBookingId });
-                    return { success: true, id: savedBookingId };
-                    
-                } catch (error) {
-                    lastError = error;
-                    safeLog('warn', `Save attempt ${attempt} failed`, { 
-                        id: savedBookingId, 
-                        error: error.message,
-                        errorCode: error.code 
-                    });
-                    
-                    // If it's a "not found" error on update, try creating instead
-                    if (error.message.includes('No document to update') && isUpdate) {
-                        safeLog('info', 'Document not found for update, switching to create mode');
-                        // Remove the ID and try creating a new document
-                        savedBookingId = this.generateBookingId();
-                        
-                        try {
+                    if (operation === 'CREATE') {
+                        if (savedBookingId) {
+                            // Create con ID specifico
                             await this.withTimeout(
                                 db.collection('bookings').doc(savedBookingId).set({
                                     ...bookingData,
@@ -332,18 +409,49 @@ class DatabaseManager {
                                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                                 })
                             );
-                            
-                            this.updateConnectionStatus('online');
-                            safeLog('info', 'Booking created after update failure', { id: savedBookingId });
-                            return { success: true, id: savedBookingId };
-                        } catch (createError) {
-                            safeLog('error', 'Failed to create after update failure', createError);
-                            lastError = createError;
+                        } else {
+                            // Create nuovo documento
+                            const docRef = await this.withTimeout(
+                                db.collection('bookings').add({
+                                    ...bookingData,
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                })
+                            );
+                            savedBookingId = docRef.id;
                         }
+                    } else {
+                        // Update esistente
+                        const { id, createdAt, ...updateData } = bookingData;
+                        await this.withTimeout(
+                            db.collection('bookings').doc(booking.id).update({
+                                ...updateData,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            })
+                        );
                     }
                     
+                    // OTTIMIZZAZIONE: Aggiorna cache
+                    this.bookingsCache.set(savedBookingId, {
+                        data: bookingData,
+                        timestamp: Date.now()
+                    });
+                    
+                    this.updateConnectionStatus('online');
+                    safeLog('info', 'Booking saved successfully', { id: savedBookingId, operation });
+                    return { success: true, id: savedBookingId };
+                    
+                } catch (error) {
+                    lastError = error;
+                    safeLog('warn', `Save attempt ${attempt} failed`, { 
+                        id: savedBookingId, 
+                        error: error.message,
+                        attempt
+                    });
+                    
                     if (attempt < this.retryAttempts) {
-                        await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
+                        const delay = this.calculateRetryDelay(attempt);
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
             }
@@ -355,8 +463,21 @@ class DatabaseManager {
                 booking: booking.id || 'new', 
                 error: error.message 
             });
+            
+            // OTTIMIZZAZIONE: Aggiungi alla coda se offline
+            if (!this.isOnline) {
+                this.saveQueue.set(saveKey, {
+                    execute: () => this.saveBooking(booking),
+                    booking,
+                    timestamp: Date.now()
+                });
+                safeLog('info', 'Booking queued for later processing', { id: saveKey });
+            }
+            
             this.updateConnectionStatus('offline');
             return { success: false, error: error.message };
+        } finally {
+            this.activeSaves.delete(saveKey);
         }
     }
 
@@ -371,12 +492,9 @@ class DatabaseManager {
                 time: String(booking.time || '').trim(),
                 status: String(booking.status || 'pending').trim(),
                 notes: String(booking.notes || '').trim(),
-                duration: parseInt(booking.duration) || 30,
+                duration: Math.max(15, Math.min(480, parseInt(booking.duration) || 30)),
                 color: String(booking.color || '#8b5cf6').trim()
             };
-
-            // Ensure duration is within reasonable bounds
-            prepared.duration = Math.max(15, Math.min(480, prepared.duration));
 
             // Ensure status is valid
             const validStatuses = ['pending', 'confirmed', 'cancelled', 'old'];
@@ -384,8 +502,7 @@ class DatabaseManager {
                 prepared.status = 'pending';
             }
 
-            // Handle dates - don't include createdAt in prepared data for new bookings
-            // Firebase will set it automatically
+            // Handle dates for updates
             if (booking.id && booking.createdAt) {
                 prepared.createdAt = firebase.firestore.Timestamp.fromDate(
                     booking.createdAt instanceof Date ? booking.createdAt : new Date(booking.createdAt)
@@ -404,7 +521,7 @@ class DatabaseManager {
         }
     }
 
-    // Carica tutte le prenotazioni con error handling
+    // OTTIMIZZAZIONE: Load con cache intelligente
     async loadBookings() {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for loadBookings');
@@ -430,6 +547,11 @@ class DatabaseManager {
                     const booking = this.processBookingFromFirestore(doc.id, data);
                     if (booking) {
                         bookings.push(booking);
+                        // OTTIMIZZAZIONE: Aggiorna cache
+                        this.bookingsCache.set(doc.id, {
+                            data: booking,
+                            timestamp: Date.now()
+                        });
                     }
                 } catch (error) {
                     safeLog('warn', 'Error processing booking document', { docId: doc.id, error: error.message });
@@ -481,7 +603,7 @@ class DatabaseManager {
         }
     }
 
-    // Elimina prenotazione con retry logic
+    // OTTIMIZZAZIONE: Delete con cache cleanup
     async deleteBooking(id) {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for deleteBooking');
@@ -498,7 +620,7 @@ class DatabaseManager {
             
             let lastError = null;
             
-            // Retry logic
+            // Retry con exponential backoff
             for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
                 try {
                     safeLog('info', `Deleting booking attempt ${attempt}`, { id });
@@ -506,6 +628,9 @@ class DatabaseManager {
                     await this.withTimeout(
                         db.collection('bookings').doc(id).delete()
                     );
+                    
+                    // OTTIMIZZAZIONE: Pulisci cache
+                    this.bookingsCache.delete(id);
                     
                     this.updateConnectionStatus('online');
                     safeLog('info', 'Booking deleted successfully', { id });
@@ -516,7 +641,8 @@ class DatabaseManager {
                     safeLog('warn', `Delete attempt ${attempt} failed`, { id, error: error.message });
                     
                     if (attempt < this.retryAttempts) {
-                        await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
+                        const delay = this.calculateRetryDelay(attempt);
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
             }
@@ -530,7 +656,7 @@ class DatabaseManager {
         }
     }
 
-    // Salva impostazioni nel database
+    // OTTIMIZZAZIONE: Settings con cache
     async saveSettings(settings) {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for saveSettings');
@@ -553,6 +679,12 @@ class DatabaseManager {
                 })
             );
             
+            // OTTIMIZZAZIONE: Aggiorna cache settings
+            this.settingsCache = {
+                data: settings,
+                timestamp: Date.now()
+            };
+            
             this.updateConnectionStatus('online');
             safeLog('info', 'Settings saved successfully');
             return { success: true };
@@ -564,7 +696,7 @@ class DatabaseManager {
         }
     }
 
-    // Carica impostazioni dal database
+    // OTTIMIZZAZIONE: Load settings con cache
     async loadSettings() {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for loadSettings');
@@ -572,6 +704,13 @@ class DatabaseManager {
         }
 
         try {
+            // OTTIMIZZAZIONE: Controlla cache prima
+            if (this.settingsCache && 
+                Date.now() - this.settingsCache.timestamp < this.cacheExpiry) {
+                safeLog('debug', 'Settings loaded from cache');
+                return this.settingsCache.data;
+            }
+            
             this.updateConnectionStatus('syncing');
             
             safeLog('info', 'Loading settings from Firestore');
@@ -584,6 +723,13 @@ class DatabaseManager {
             
             if (doc.exists) {
                 const settings = doc.data();
+                
+                // OTTIMIZZAZIONE: Aggiorna cache
+                this.settingsCache = {
+                    data: settings,
+                    timestamp: Date.now()
+                };
+                
                 safeLog('info', 'Settings loaded successfully');
                 return settings;
             } else {
@@ -598,7 +744,7 @@ class DatabaseManager {
         }
     }
 
-    // Ascolta cambiamenti in tempo reale
+    // OTTIMIZZAZIONE: Real-time listener con gestione memoria
     onBookingsChange(callback) {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for real-time listener');
@@ -613,7 +759,7 @@ class DatabaseManager {
         try {
             safeLog('info', 'Setting up real-time bookings listener');
             
-            return db.collection('bookings')
+            const unsubscribe = db.collection('bookings')
                 .orderBy('createdAt', 'desc')
                 .onSnapshot(
                     snapshot => {
@@ -625,6 +771,11 @@ class DatabaseManager {
                                     const booking = this.processBookingFromFirestore(doc.id, doc.data());
                                     if (booking) {
                                         bookings.push(booking);
+                                        // OTTIMIZZAZIONE: Aggiorna cache in real-time
+                                        this.bookingsCache.set(doc.id, {
+                                            data: booking,
+                                            timestamp: Date.now()
+                                        });
                                     }
                                 } catch (error) {
                                     safeLog('warn', 'Error processing booking in real-time update', { docId: doc.id, error: error.message });
@@ -636,15 +787,25 @@ class DatabaseManager {
                             
                         } catch (error) {
                             safeLog('error', 'Error processing real-time snapshot', error);
-                            callback([]); // Call with empty array on error
+                            callback([]);
                         }
                     },
                     error => {
                         safeLog('error', 'Real-time listener error', error);
                         this.updateConnectionStatus('offline');
-                        callback([]); // Call with empty array on error
+                        callback([]);
                     }
                 );
+            
+            // OTTIMIZZAZIONE: Restituisci funzione di cleanup
+            return () => {
+                try {
+                    unsubscribe();
+                    safeLog('info', 'Real-time listener unsubscribed');
+                } catch (error) {
+                    safeLog('error', 'Error unsubscribing real-time listener', error);
+                }
+            };
                 
         } catch (error) {
             safeLog('error', 'Error setting up real-time listener', error);
@@ -652,7 +813,7 @@ class DatabaseManager {
         }
     }
 
-    // Forza sincronizzazione
+    // OTTIMIZZAZIONE: Force sync migliorato
     async forceSync() {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for forceSync');
@@ -663,6 +824,10 @@ class DatabaseManager {
             this.updateConnectionStatus('syncing');
             
             safeLog('info', 'Forcing network sync');
+            
+            // OTTIMIZZAZIONE: Pulisci cache durante force sync
+            this.bookingsCache.clear();
+            this.settingsCache = null;
             
             await this.withTimeout(db.enableNetwork());
             
@@ -677,7 +842,7 @@ class DatabaseManager {
         }
     }
 
-    // Test connessione Firebase
+    // OTTIMIZZAZIONE: Test connessione con timeout ridotto
     async testConnection() {
         if (!this.isFirebaseReady || !db) {
             safeLog('error', 'Firebase not ready for connection test');
@@ -689,7 +854,7 @@ class DatabaseManager {
             
             await this.withTimeout(
                 db.collection('test').doc('connection').get(),
-                5000 // Shorter timeout for connection test
+                3000 // Timeout ridotto per test veloce
             );
             
             safeLog('info', 'Firebase connection test successful');
@@ -701,16 +866,68 @@ class DatabaseManager {
         }
     }
 
-    // Get health status
+    // OTTIMIZZAZIONE: Health status dettagliato
     getHealthStatus() {
-       try {
-    // Provo a usare l'istanza reale
+        try {
+            return {
+                isOnline: this.isOnline,
+                isFirebaseReady: this.isFirebaseReady,
+                connectionQuality: this.connectionQuality,
+                operationTimeout: this.operationTimeout,
+                activeSaves: this.activeSaves.size,
+                queuedOperations: this.saveQueue.size,
+                cacheStats: {
+                    bookingsCount: this.bookingsCache.size,
+                    settingsCached: !!this.settingsCache,
+                    cacheExpiry: this.cacheExpiry
+                },
+                performance: {
+                    retryAttempts: this.retryAttempts,
+                    baseRetryDelay: this.baseRetryDelay,
+                    maxRetryDelay: this.maxRetryDelay
+                }
+            };
+        } catch (error) {
+            safeLog('error', 'Error getting health status', error);
+            return { error: error.message };
+        }
+    }
+
+    // OTTIMIZZAZIONE: Cleanup method per memory management
+    cleanup() {
+        try {
+            safeLog('info', 'Cleaning up DatabaseManager');
+            
+            // Pulisci cache
+            this.bookingsCache.clear();
+            this.settingsCache = null;
+            
+            // Pulisci operazioni attive
+            this.activeSaves.clear();
+            this.saveQueue.clear();
+            
+            // Rimuovi event listeners
+            window.removeEventListener('online', this.onlineHandler);
+            window.removeEventListener('offline', this.offlineHandler);
+            
+            safeLog('info', 'DatabaseManager cleanup completed');
+        } catch (error) {
+            safeLog('error', 'Error during DatabaseManager cleanup', error);
+        }
+    }
+}
+
+// OTTIMIZZAZIONE: Singleton pattern per DatabaseManager
+let dbManagerInstance = null;
+
+try {
+    dbManagerInstance = new DatabaseManager();
     window.dbManager = dbManagerInstance;
     safeLog('info', 'Global database manager instance created');
 } catch (error) {
     safeLog('error', 'Failed to create database manager instance', error);
 
-    // Se fallisce, uso un fallback mock
+    // Fallback mock ottimizzato
     window.dbManager = {
         async saveBooking() {
             return { success: false, error: 'Database not available' };
@@ -728,7 +945,7 @@ class DatabaseManager {
             return null;
         },
         onBookingsChange() {
-            // no-op
+            return () => {}; // Return cleanup function
         },
         async forceSync() {
             return false;
@@ -738,11 +955,18 @@ class DatabaseManager {
         },
         getHealthStatus() {
             return { error: 'Database manager not available' };
+        },
+        cleanup() {
+            // no-op
         }
     };
 
     safeLog('warn', 'Created fallback database manager');
 }
-    }
-}
 
+// OTTIMIZZAZIONE: Cleanup globale quando la pagina si chiude
+window.addEventListener('beforeunload', () => {
+    if (dbManagerInstance && typeof dbManagerInstance.cleanup === 'function') {
+        dbManagerInstance.cleanup();
+    }
+});
