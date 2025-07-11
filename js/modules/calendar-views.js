@@ -98,7 +98,7 @@ export class CalendarViews {
         
         // Create scrollable content area
         const scrollContainer = document.createElement('div');
-        scrollContainer.className = 'flex-1 overflow-y-auto max-h-96 custom-scrollbar';
+        scrollContainer.className = 'flex-1 overflow-y-auto';
         
         const contentGrid = document.createElement('div');
         contentGrid.className = 'grid grid-cols-8 gap-px bg-gray-600';
@@ -152,7 +152,7 @@ export class CalendarViews {
 
         // Create scrollable content
         const scrollContainer = document.createElement('div');
-        scrollContainer.className = 'flex-1 overflow-y-auto max-h-96 custom-scrollbar';
+        scrollContainer.className = 'flex-1 overflow-y-auto';
         
         const contentGrid = document.createElement('div');
         // Changed from grid-cols-2 to use CSS Grid with fr units for 20/80 proportion
